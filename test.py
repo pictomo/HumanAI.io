@@ -1,0 +1,3 @@
+import haio
+
+haio.help()
