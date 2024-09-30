@@ -10,6 +10,9 @@ haio.help()
 python test.py
 ```
 
+## test
+`pip install .`
+
 ## reference
 * [Python Packaging User Guide](https://packaging.python.org/ja/latest/guides/)
 * [twine](https://twine.readthedocs.io/en/stable/)
