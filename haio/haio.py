@@ -59,6 +59,26 @@ template1: str = """
 </HTMLQuestion>
 """
 
+# https://requester.mturk.com/create/projects/new collect utterance
+template2: str = """
+<HTMLQuestion xmlns="http://mechanicalturk.amazonaws.com/AWSMechanicalTurkDataSchemas/2011-11-11/HTMLQuestion.xsd">
+    <HTMLContent><![CDATA[
+        <!DOCTYPE html>
+            <body>
+                <script src="https://assets.crowd.aws/crowd-html-elements.js"></script>
+                <crowd-form answer-format="flatten-objects">
+
+                    <h2>{question}</h2>
+
+                    <crowd-input name="response" placeholder="Type your answer here..." required></crowd-input>
+                </crowd-form>
+            </body>
+        </html>
+    ]]></HTMLContent>
+    <FrameHeight>0</FrameHeight>
+</HTMLQuestion>
+"""
+
 
 class MTurk_IO:
     mturk_client = boto3.client(
@@ -81,7 +101,7 @@ class MTurk_IO:
             MaxAssignments=1,  # 受け付ける回答数（＝ワーカー数）上限
             LifetimeInSeconds=3600,  # HITの有効期限を3600秒（1時間）後に設定
             AssignmentDurationInSeconds=300,  # HITの制限時間を300秒（5分）に設定
-            Question=template1.format(
+            Question=template2.format(
                 question=question
             ),  # my_hit.htmlの中身を文字列でそのまま渡す
         )

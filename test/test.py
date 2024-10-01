@@ -8,5 +8,5 @@ if __name__ == "__main__":
     print(answer)
 
     # answer: str = processing_client.make_hit("What is yout favorite phrase or saying?")
-    # processing_client.is_finished("3ZICQFRS4IYFDVUGW3081WYXHQDZZY")
-    # processing_client.get_result("3ZICQFRS4IYFDVUGW3081WYXHQDZZY")
+    # print(processing_client.is_finished("3H1C3QRA1IZ4U7SA822N5OWUK2WECM"))
+    # print(processing_client.get_result("3H1C3QRA1IZ4U7SA822N5OWUK2WECM"))
