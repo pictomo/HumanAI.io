@@ -15,7 +15,7 @@ def help() -> None:
 class OpenAI_IO:
     openai_client = OpenAI()
 
-    def question(self, question: str) -> str:
+    def ask(self, question: str) -> str:
         completion = self.openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -128,7 +128,7 @@ class MTurk_IO:
         free_text: str = node.text or ""
         return free_text
 
-    def question(self, question: str) -> str:
+    def ask(self, question: str) -> str:
         hit_id: str = self.make_hit(question)
         while not self.is_finished(hit_id):
             time.sleep(10)
