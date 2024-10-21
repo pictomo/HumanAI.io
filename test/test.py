@@ -1,8 +1,8 @@
 from haio import OpenAI_IO, MTurk_IO
 
 if __name__ == "__main__":
-    # processing_client = OpenAI_IO()
-    processing_client = MTurk_IO()
+    processing_client = OpenAI_IO()
+    # processing_client = MTurk_IO()
 
     answer: str = processing_client.ask("What is your favorite phrase or saying?")
     print(answer)
