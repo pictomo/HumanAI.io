@@ -4,7 +4,9 @@ if __name__ == "__main__":
     processing_client = OpenAI_IO()
     # processing_client = MTurk_IO()
 
-    answer: str = processing_client.ask("What is your favorite phrase or saying?")
+    answer: str = processing_client.ask(
+        "What is your favorite phrase or saying? Please answer only those words. No semicolon, etc. is needed."
+    )
     print(answer)
 
     # answer: str = processing_client.make_hit("What is your favorite phrase or saying?")
