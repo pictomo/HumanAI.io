@@ -4,5 +4,7 @@ build
 
 # main
 pytyon-dotenv
+asyncio
+aiohttp
 openai
 boto3
