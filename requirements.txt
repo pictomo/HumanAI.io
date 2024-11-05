@@ -3,7 +3,7 @@ twine
 build
 
 # main
-pytyon-dotenv
+python-dotenv
 asyncio
 aiohttp
 openai
