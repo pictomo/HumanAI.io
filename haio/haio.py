@@ -2,8 +2,8 @@ from openai import OpenAI
 import boto3
 from dotenv import load_dotenv
 import os
-import time
 import xml.etree.ElementTree as ET
+import asyncio
 
 load_dotenv()
 
@@ -14,8 +14,12 @@ def help() -> None:
 
 class OpenAI_IO:
     openai_client = OpenAI()
+    answer = ""
 
-    def ask(self, question: str) -> str:
+    def ask(self, question: str) -> None:
+        if self.answer != "":
+            raise Exception("already asking")
+
         completion = self.openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -23,11 +27,26 @@ class OpenAI_IO:
                 {"role": "user", "content": question},
             ],
         )
-
         if completion.choices[0].message.content:
-            return completion.choices[0].message.content
+            self.answer = completion.choices[0].message.content
         else:
             raise Exception("The model returned empty response.")
+
+    def is_finished(self) -> bool:
+        if self.answer == "":
+            raise Exception("never asked")
+        return self.answer != ""
+
+    def get_answer(self) -> str:
+        if self.answer == "":
+            raise Exception("never asked")
+        tmp = self.answer
+        self.answer = ""
+        return tmp
+
+    async def ask_get_answer(self, question: str) -> str:
+        self.ask(question)
+        return self.get_answer()
 
 
 template1: str = """
@@ -88,11 +107,15 @@ class MTurk_IO:
         region_name="us-east-1",
         endpoint_url="https://mturk-requester-sandbox.us-east-1.amazonaws.com",
     )
+    hit_id: str = ""
 
     def test(self) -> dict:
         return self.mturk_client.get_account_balance()
 
-    def make_hit(self, question: str) -> str:
+    def ask(self, question: str) -> None:
+        if self.hit_id != "":
+            raise Exception("already asking")
+
         res = self.mturk_client.create_hit(
             Title="Answer a question",
             Description="Please answer the following question simply and accurately.",
@@ -106,15 +129,24 @@ class MTurk_IO:
             ),  # my_hit.htmlの中身を文字列でそのまま渡す
         )
         print("HIT ID:", res["HIT"]["HITId"])
-        return res["HIT"]["HITId"]
+        self.hit_id = res["HIT"]["HITId"]
 
-    def is_finished(self, hit_id: str) -> bool:
+    def is_finished(self, hit_id: str | None = None) -> bool:
+        if self.hit_id == "":
+            raise Exception("never asked")
+
+        hit_id = hit_id or self.hit_id
         res = self.mturk_client.get_hit(HITId=hit_id)
         state = res["HIT"]["HITStatus"]
         return state == "Reviewable" or state == "Reviewing"
 
-    def get_result(self, hit_id: str) -> str:
+    def get_answer(self, hit_id: str | None = None) -> str:
+        if self.hit_id == "":
+            raise Exception("never asked")
+
+        hit_id = hit_id or self.hit_id
         res: dict = self.mturk_client.list_assignments_for_hit(HITId=hit_id)
+        self.hit_id = ""
         answer = res["Assignments"][0]["Answer"]
         root = ET.fromstring(answer)
         node = root.find(
@@ -128,8 +160,8 @@ class MTurk_IO:
         free_text: str = node.text or ""
         return free_text
 
-    def ask(self, question: str) -> str:
-        hit_id: str = self.make_hit(question)
-        while not self.is_finished(hit_id):
-            time.sleep(10)
-        return self.get_result(hit_id)
+    async def ask_get_answer(self, question: str) -> str:
+        self.ask(question)
+        while not self.is_finished():
+            await asyncio.sleep(10)
+        return self.get_answer()
