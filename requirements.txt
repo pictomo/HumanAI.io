@@ -2,13 +2,15 @@
 twine
 build
 
+# package-mgmt
+pip-autoremove
+
 # main
 python-dotenv
 asyncio
 aiohttp
 openai
 boto3
+boto3-stubs
 beautifulsoup4
 types-beautifulsoup4
-lxml
-types-lxml
