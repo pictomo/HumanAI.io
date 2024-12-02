@@ -1,5 +1,4 @@
 from haio import OpenAI_IO, MTurk_IO
-import time
 import asyncio
 
 

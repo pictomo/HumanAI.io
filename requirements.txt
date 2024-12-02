@@ -8,3 +8,5 @@ asyncio
 aiohttp
 openai
 boto3
+beautifulsoup4
+lxml
