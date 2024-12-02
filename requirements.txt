@@ -9,4 +9,6 @@ aiohttp
 openai
 boto3
 beautifulsoup4
+types-beautifulsoup4
 lxml
+types-lxml

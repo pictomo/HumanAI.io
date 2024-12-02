@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 import os
 import xml.etree.ElementTree as ET
 import asyncio
+from bs4 import BeautifulSoup
+
 
 load_dotenv()
 
