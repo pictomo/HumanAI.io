@@ -1,9 +1,11 @@
-from openai import OpenAI
-import boto3
+from typing import TypedDict
 from dotenv import load_dotenv
 import os
 import xml.etree.ElementTree as ET
 import asyncio
+import textwrap
+import boto3
+from openai import OpenAI
 from bs4 import BeautifulSoup
 
 
@@ -14,19 +16,62 @@ def help() -> None:
     print("HumanAI.io")
 
 
+class QuestionConfig(TypedDict):
+    title: str
+    description: str
+    question: list
+    answer: dict
+
+
 class OpenAI_IO:
     openai_client = OpenAI()
     answer = ""
 
-    def ask(self, question: str) -> None:
+    def ask(self, question_config: QuestionConfig) -> None:
         if self.answer != "":
             raise Exception("already asking")
+
+        # クエリの構成
+
+        # questionのテンプレートを構成
+        user_message = ""
+        for question in question_config["question"]:
+            match question["tag"]:
+                case "h1":
+                    user_message += f"# {question['value']}\n"
+                case "h2":
+                    user_message += f"## {question['value']}\n"
+                case "h3":
+                    user_message += f"### {question['value']}\n"
+                case "h4":
+                    user_message += f"#### {question['value']}\n"
+                case "h5":
+                    user_message += f"##### {question['value']}\n"
+                case "h6":
+                    user_message += f"###### {question['value']}\n"
+                case "p":
+                    user_message += f"{question['value']}\n"
+                case _:
+                    raise Exception("Invalid tag.")
+
+        # answerのテンプレートを構成
+        system_message = textwrap.dedent(
+            """\
+            Respond to questions in Markdown format in the same way as a crowdsourcing worker would, providing accurate and concise answers according to the answer format below.
+            You do not need to rely on crowdworkers for the accuracy of your answers, so please provide answers of the highest possible standard.
+            answer format:
+        """
+        )
+        if question_config["answer"]["type"] in ["text", "number"]:
+            system_message += f"{question_config["answer"]["type"]}"
+        else:
+            raise Exception("Invalid answer type.")
 
         completion = self.openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": question},
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message},
             ],
         )
         if completion.choices[0].message.content:
@@ -46,12 +91,12 @@ class OpenAI_IO:
         self.answer = ""
         return tmp
 
-    async def ask_get_answer(self, question: str) -> str:
-        self.ask(question)
+    async def ask_get_answer(self, question_config: QuestionConfig) -> str:
+        self.ask(question_config=question_config)
         return self.get_answer()
 
 
-# template1: str = """
+# template1: str = textwrap.dedent("""\
 # <HTMLQuestion xmlns="http://mechanicalturk.amazonaws.com/AWSMechanicalTurkDataSchemas/2011-11-11/HTMLQuestion.xsd">
 #     <HTMLContent><![CDATA[
 
@@ -78,30 +123,26 @@ class OpenAI_IO:
 #     </HTMLContent>
 #     <FrameHeight>800</FrameHeight>
 # </HTMLQuestion>
-# """
+# """)
 
 # https://requester.mturk.com/create/projects/new collect utterance
-outer_template: str = """
+template2: str = textwrap.dedent(
+    """\
 <HTMLQuestion xmlns="http://mechanicalturk.amazonaws.com/AWSMechanicalTurkDataSchemas/2011-11-11/HTMLQuestion.xsd">
     <HTMLContent><![CDATA[
-        {inner_template}
+        <!DOCTYPE html>
+            <body>
+                <script src="https://assets.crowd.aws/crowd-html-elements.js"></script>
+                <crowd-form answer-format="flatten-objects">
+                    {body}
+                </crowd-form>
+            </body>
+        </html>
     ]]></HTMLContent>
     <FrameHeight>0</FrameHeight>
 </HTMLQuestion>
 """
-inner_template1: str = """
-<!DOCTYPE html>
-    <body>
-        <script src="https://assets.crowd.aws/crowd-html-elements.js"></script>
-        <crowd-form answer-format="flatten-objects">
-
-            <!-- question here -->
-
-            <crowd-input name="response" placeholder="Type your answer here..." required></crowd-input>
-        </crowd-form>
-    </body>
-</html>
-"""
+)
 
 
 class MTurk_IO:
@@ -117,30 +158,55 @@ class MTurk_IO:
     def test(self) -> dict:
         return self.mturk_client.get_account_balance()
 
-    def ask(self, question: str) -> None:
+    # HITを作成し、そのHIT IDを返す
+    def ask(self, question_config: QuestionConfig) -> None:
         if self.hit_id != "":
             raise Exception("already asking")
 
-        soup = BeautifulSoup(inner_template1, "html.parser")
-        new_h2 = soup.new_tag("h2")
-        new_h2.string = question
-        soup.find("crowd-form").insert(0, new_h2)
+        # テンプレートの構成
+        soup = BeautifulSoup("", "html.parser")
 
+        # questionのテンプレートを構成
+        for question in question_config["question"]:
+            if question["tag"] in ["h1", "h2", "h3", "h4", "h5", "h6", "p"]:
+                input_soup = soup.new_tag(question["tag"])
+                input_soup.string = question["value"]
+                soup.append(input_soup)
+            else:
+                raise Exception("Invalid tag.")
+
+        # answerのテンプレートを構成
+        if question_config["answer"]["type"] in ["text", "number"]:
+            output_soup = soup.new_tag(
+                name="crowd-input",
+                attrs={
+                    "name": "response",
+                    "placeholder": "Type your answer here...",
+                    "required": "",
+                },
+            )
+            soup.append(output_soup)
+        else:
+            raise Exception("Invalid answer type.")
+
+        # タスクの構成と発行
         res = self.mturk_client.create_hit(
-            Title="Answer a question",
-            Description="Please answer the following question simply and accurately.",
+            Title=question_config["title"],
+            Description=question_config["description"],
             Keywords="this,is,my,HIT,hoge",  # コンマ区切りで検索キーワードを指定
             Reward="0.05",
             MaxAssignments=1,  # 受け付ける回答数（＝ワーカー数）上限
-            LifetimeInSeconds=3600,  # HITの有効期限を3600秒（1時間）後に設定
-            AssignmentDurationInSeconds=300,  # HITの制限時間を300秒（5分）に設定
-            Question=outer_template.format(
-                inner_template=soup.prettify()
+            LifetimeInSeconds=3600,  # 有効期限
+            AssignmentDurationInSeconds=300,  # 制限時間
+            Question=template2.format(
+                body=soup.prettify()
             ),  # my_hit.htmlの中身を文字列でそのまま渡す
         )
+
         print("HIT ID:", res["HIT"]["HITId"])
         self.hit_id = res["HIT"]["HITId"]
 
+    # HIT IDを指定して、そのHITが終了しているかどうかを返す
     def is_finished(self, hit_id: str | None = None) -> bool:
         if self.hit_id == "":
             raise Exception("never asked")
@@ -150,6 +216,7 @@ class MTurk_IO:
         state = res["HIT"]["HITStatus"]
         return state == "Reviewable" or state == "Reviewing"
 
+    # HIT IDを指定して、そのHITの結果を返す
     def get_answer(self, hit_id: str | None = None) -> str:
         if self.hit_id == "":
             raise Exception("never asked")
@@ -170,8 +237,9 @@ class MTurk_IO:
         free_text: str = node.text or ""
         return free_text
 
-    async def ask_get_answer(self, question: str) -> str:
-        self.ask(question)
+    # HITを作成し、その結果を返す
+    async def ask_get_answer(self, question_config: QuestionConfig) -> str:
+        self.ask(question_config=question_config)
         while not self.is_finished():
             await asyncio.sleep(10)
         return self.get_answer()
