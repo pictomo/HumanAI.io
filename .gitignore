@@ -3,6 +3,9 @@
 memo*.md
 .env
 
+# os_dependent
+.DS_Store
+
 # python
 venv/
 __pycache__
