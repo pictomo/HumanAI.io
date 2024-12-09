@@ -1,7 +1,8 @@
-from typing import TypedDict
+from typing import TypedDict, Any
 from dotenv import load_dotenv
 import os
 import xml.etree.ElementTree as ET
+import json
 import asyncio
 import textwrap
 import boto3
@@ -31,8 +32,6 @@ class OpenAI_IO:
         if self.answer != "":
             raise Exception("already asking")
 
-        # クエリの構成
-
         # questionのテンプレートを構成
         user_message = ""
         for question in question_config["question"]:
@@ -55,27 +54,69 @@ class OpenAI_IO:
                     raise Exception("Invalid tag.")
 
         # answerのテンプレートを構成
-        system_message = textwrap.dedent(
+
+        # システムメッセージの構成
+        system_message: Any = textwrap.dedent(
             """\
             Respond to questions in Markdown format in the same way as a crowdsourcing worker would, providing accurate and concise answers according to the answer format below.
+            Write only the answer and no explanation, semicolon, etc. is needed.
             You do not need to rely on crowdworkers for the accuracy of your answers, so please provide answers of the highest possible standard.
             answer format:
         """
         )
-        if question_config["answer"]["type"] in ["text", "number"]:
-            system_message += f"{question_config["answer"]["type"]}"
+
+        # クエリの構成
+        response_format: Any = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "answer",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": {"answer": {}},
+                    "required": ["answer"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+
+        # 回答形式に応じてシステムメッセージとクエリを
+        if question_config["answer"]["type"] == "number":
+            system_message += "{{answer: {}}}".format("number")
+            response_format["json_schema"]["schema"]["properties"]["answer"][
+                "type"
+            ] = "number"
+        elif question_config["answer"]["type"] == "text":
+            system_message += "{{answer: {}}}".format("string")
+            response_format["json_schema"]["schema"]["properties"]["answer"][
+                "type"
+            ] = "string"
+        elif question_config["answer"]["type"] == "select":
+            system_message += "{{answer: select from {}}}".format(
+                question_config["answer"]["options"]
+            )
+            response_format["json_schema"]["schema"]["properties"]["answer"][
+                "type"
+            ] = "string"
+            response_format["json_schema"]["schema"]["properties"]["answer"]["enum"] = (
+                question_config["answer"]["options"]
+            )
         else:
             raise Exception("Invalid answer type.")
 
+        # タスクの構成と発行
         completion = self.openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message},
             ],
+            response_format=response_format,
         )
+
         if completion.choices[0].message.content:
-            self.answer = completion.choices[0].message.content
+            answer_objstr = completion.choices[0].message.content
+            self.answer = json.loads(answer_objstr)["answer"]
         else:
             raise Exception("The model returned empty response.")
 
@@ -185,6 +226,13 @@ class MTurk_IO:
                     "required": "",
                 },
             )
+            soup.append(output_soup)
+        elif question_config["answer"]["type"] == "select":
+            output_soup = soup.new_tag(name="select", attrs={"name": "response"})
+            for option in question_config["answer"]["options"]:
+                option_soup = soup.new_tag(name="option", attrs={"value": option})
+                option_soup.string = option
+                output_soup.append(option_soup)
             soup.append(output_soup)
         else:
             raise Exception("Invalid answer type.")

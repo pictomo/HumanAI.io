@@ -6,7 +6,6 @@ build
 pip-autoremove
 
 # main
-pydantic
 python-dotenv
 asyncio
 aiohttp

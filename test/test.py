@@ -4,28 +4,60 @@ import asyncio
 
 
 async def main() -> None:
-    # processing_client = OpenAI_IO()
-    processing_client = MTurk_IO()
+    processing_client = OpenAI_IO()
+    # processing_client = MTurk_IO()
 
+    # data = [
+    #     "A penny saved is a penny gained.",
+    #     "No pain, no gain.",
+    # ]
+
+    # select
     question_config: Any = {
         "title": "Favorite Phrase or Saying",
-        "description": "Please just write your favorite phrase or saying.",
+        "description": "Please choose your favorite phrase or saying.",
         "question": [
             {
                 "tag": "h2",
-                "value": "What is your favorite phrase or saying?",
+                "value": "Which is your favorite phrase or saying?",
             },
             {
                 "tag": "p",
-                "value": "Please answer only those words. No semicolon, etc. is needed.",
+                "value": "1. A penny saved is a penny gained.",
             },
             {
                 "tag": "p",
-                "value": "The answer will be used for experiment.",
+                "value": "2. No pain, no gain.",
             },
         ],
-        "answer": {"type": "text"},
+        "answer": {"type": "select", "options": ["1", "2"]},
     }
+
+    # # text
+    # question_config = {
+    #     "title": "Favorite Phrase or Saying",
+    #     "description": "Please tell me your favorite phrase or saying.",
+    #     "question": [
+    #         {
+    #             "tag": "h2",
+    #             "value": "Which is your favorite phrase or saying?",
+    #         },
+    #     ],
+    #     "answer": {"type": "text"},
+    # }
+
+    # # number
+    # question_config = {
+    #     "title": "Favorite Number",
+    #     "description": "Please tell me your favorite number.",
+    #     "question": [
+    #         {
+    #             "tag": "h2",
+    #             "value": "Which is your favorite number?",
+    #         },
+    #     ],
+    #     "answer": {"type": "number"},
+    # }
 
     answer_aiotask = asyncio.create_task(
         processing_client.ask_get_answer(
