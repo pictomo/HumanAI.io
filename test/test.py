@@ -4,16 +4,18 @@ import asyncio
 
 
 async def main() -> None:
-    processing_client = OpenAI_IO()
-    # processing_client = MTurk_IO()
+    # processing_client = OpenAI_IO()
+    processing_client = MTurk_IO()
 
-    # data = [
-    #     "A penny saved is a penny gained.",
-    #     "No pain, no gain.",
-    # ]
+    data_list = [
+        "A penny saved is a penny gained.",
+        "No pain, no gain.",
+    ]
+
+    question_config: Any
 
     # select
-    question_config: Any = {
+    question_config = {
         "title": "Favorite Phrase or Saying",
         "description": "Please choose your favorite phrase or saying.",
         "question": [
@@ -23,14 +25,50 @@ async def main() -> None:
             },
             {
                 "tag": "p",
-                "value": "1. A penny saved is a penny gained.",
+                "value": 0,
             },
             {
                 "tag": "p",
-                "value": "2. No pain, no gain.",
+                "value": 1,
             },
         ],
         "answer": {"type": "select", "options": ["1", "2"]},
+    }
+
+    # # select
+    # question_config = {
+    #     "title": "Favorite Phrase or Saying",
+    #     "description": "Please choose your favorite phrase or saying.",
+    #     "question": [
+    #         {
+    #             "tag": "h2",
+    #             "value": "Which is your favorite phrase or saying?",
+    #         },
+    #         {
+    #             "tag": "p",
+    #             "value": "1. A penny saved is a penny gained.",
+    #         },
+    #         {
+    #             "tag": "p",
+    #             "value": "2. No pain, no gain.",
+    #         },
+    #     ],
+    #     "answer": {"type": "select", "options": ["1", "2"]},
+    # }
+
+    # text-insert
+    data_list = ["What is your favorite phrase or saying?"]
+
+    question_config = {
+        "title": "Favorite Phrase or Saying",
+        "description": "Please tell me your favorite phrase or saying.",
+        "question": [
+            {
+                "tag": "h2",
+                "value": 0,
+            },
+        ],
+        "answer": {"type": "text"},
     }
 
     # # text
@@ -40,7 +78,7 @@ async def main() -> None:
     #     "question": [
     #         {
     #             "tag": "h2",
-    #             "value": "Which is your favorite phrase or saying?",
+    #             "value": "What is your favorite phrase or saying?",
     #         },
     #     ],
     #     "answer": {"type": "text"},
@@ -62,6 +100,7 @@ async def main() -> None:
     answer_aiotask = asyncio.create_task(
         processing_client.ask_get_answer(
             question_config=question_config,
+            data_list=data_list,
         )
     )
 

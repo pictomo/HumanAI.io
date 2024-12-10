@@ -5,6 +5,9 @@ build
 # package-mgmt
 pip-autoremove
 
+# debug
+icecream
+
 # main
 python-dotenv
 asyncio

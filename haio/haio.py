@@ -1,3 +1,4 @@
+from icecream import ic
 from typing import TypedDict, Any
 from dotenv import load_dotenv
 import os
@@ -24,13 +25,39 @@ class QuestionConfig(TypedDict):
     answer: dict
 
 
+def insert_data(question_config: QuestionConfig, data_list: list) -> QuestionConfig:
+    question_config_copy = question_config.copy()
+    for i in range(len(question_config_copy["question"])):
+        if type(question_config_copy["question"][i]["value"]) == int:
+            question_config_copy["question"][i]["value"] = data_list[
+                question_config_copy["question"][i]["value"]
+            ]
+    if type(question_config_copy["answer"]["type"]) in ["int", "text"]:
+        if type(question_config_copy["answer"]["value"]) == int:
+            question_config_copy["answer"]["value"] = data_list[
+                question_config_copy["answer"]["value"]
+            ]
+        elif type(question_config_copy["answer"]["type"]) == "select":
+            for i in range(len(question_config_copy["answer"]["options"])):
+                if type(question_config_copy["answer"]["options"][i]) == int:
+                    question_config_copy["answer"]["options"][i] = data_list[
+                        question_config_copy["answer"]["options"][i]
+                    ]
+    return question_config_copy
+
+
 class OpenAI_IO:
     openai_client = OpenAI()
     answer = ""
 
-    def ask(self, question_config: QuestionConfig) -> None:
+    def ask(self, question_config: QuestionConfig, data_list: list) -> None:
         if self.answer != "":
             raise Exception("already asking")
+
+        # question_configのデータ挿入
+        question_config = insert_data(
+            question_config=question_config, data_list=data_list
+        )
 
         # questionのテンプレートを構成
         user_message = ""
@@ -55,17 +82,16 @@ class OpenAI_IO:
 
         # answerのテンプレートを構成
 
-        # システムメッセージの構成
+        # システムメッセージの初期化
         system_message: Any = textwrap.dedent(
             """\
             Respond to questions in Markdown format in the same way as a crowdsourcing worker would, providing accurate and concise answers according to the answer format below.
             Write only the answer and no explanation, semicolon, etc. is needed.
             You do not need to rely on crowdworkers for the accuracy of your answers, so please provide answers of the highest possible standard.
-            answer format:
-        """
+            answer format: """
         )
 
-        # クエリの構成
+        # クエリの初期化
         response_format: Any = {
             "type": "json_schema",
             "json_schema": {
@@ -80,7 +106,7 @@ class OpenAI_IO:
             },
         }
 
-        # 回答形式に応じてシステムメッセージとクエリを
+        # 回答形式に応じてシステムメッセージとクエリを構築
         if question_config["answer"]["type"] == "number":
             system_message += "{{answer: {}}}".format("number")
             response_format["json_schema"]["schema"]["properties"]["answer"][
@@ -132,8 +158,10 @@ class OpenAI_IO:
         self.answer = ""
         return tmp
 
-    async def ask_get_answer(self, question_config: QuestionConfig) -> str:
-        self.ask(question_config=question_config)
+    async def ask_get_answer(
+        self, question_config: QuestionConfig, data_list: list
+    ) -> str:
+        self.ask(question_config=question_config, data_list=data_list)
         return self.get_answer()
 
 
@@ -200,9 +228,14 @@ class MTurk_IO:
         return self.mturk_client.get_account_balance()
 
     # HITを作成し、そのHIT IDを返す
-    def ask(self, question_config: QuestionConfig) -> None:
+    def ask(self, question_config: QuestionConfig, data_list: list) -> None:
         if self.hit_id != "":
             raise Exception("already asking")
+
+        # question_configのデータ挿入
+        question_config = insert_data(
+            question_config=question_config, data_list=data_list
+        )
 
         # テンプレートの構成
         soup = BeautifulSoup("", "html.parser")
@@ -286,8 +319,10 @@ class MTurk_IO:
         return free_text
 
     # HITを作成し、その結果を返す
-    async def ask_get_answer(self, question_config: QuestionConfig) -> str:
-        self.ask(question_config=question_config)
+    async def ask_get_answer(
+        self, question_config: QuestionConfig, data_list: list
+    ) -> str:
+        self.ask(question_config=question_config, data_list=data_list)
         while not self.is_finished():
             await asyncio.sleep(10)
         return self.get_answer()
