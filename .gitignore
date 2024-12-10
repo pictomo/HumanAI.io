@@ -1,5 +1,5 @@
 # general
-/test*.py
+/sandbox/
 memo*.md
 .env
 
