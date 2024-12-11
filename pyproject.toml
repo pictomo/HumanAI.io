@@ -1,3 +1,6 @@
 [project]
 name = "HumanAI.io"
 version = "0.0.0"
+
+[tool.setuptools]
+packages = ["haio"]
