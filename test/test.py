@@ -1,11 +1,13 @@
 from typing import Any
-from haio import OpenAI_IO, MTurk_IO
+from haio import OpenAI_IO, MTurk_IO, HAIOClient
 import asyncio
 
 
 async def main() -> None:
-    # processing_client = OpenAI_IO()
-    processing_client = MTurk_IO()
+    ai_client = OpenAI_IO()
+    human_client = MTurk_IO()
+
+    haio_client = HAIOClient(humna_client=human_client, ai_client=ai_client)
 
     data_list = [
         "A penny saved is a penny gained.",
@@ -98,9 +100,11 @@ async def main() -> None:
     # }
 
     answer_aiotask = asyncio.create_task(
-        processing_client.ask_get_answer(
+        haio_client.ask_get_answer(
             question_config=question_config,
             data_list=data_list,
+            # client="ai",
+            client="human",
         )
     )
 

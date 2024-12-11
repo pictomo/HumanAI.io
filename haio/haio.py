@@ -1,5 +1,5 @@
 from icecream import ic
-from typing import TypedDict, Any
+from typing import TypedDict, Literal, Any
 from dotenv import load_dotenv
 import os
 import xml.etree.ElementTree as ET
@@ -50,14 +50,9 @@ class OpenAI_IO:
     openai_client = OpenAI()
     answer = ""
 
-    def ask(self, question_config: QuestionConfig, data_list: list) -> None:
+    def ask(self, question_config: QuestionConfig) -> None:
         if self.answer != "":
             raise Exception("already asking")
-
-        # question_configのデータ挿入
-        question_config = insert_data(
-            question_config=question_config, data_list=data_list
-        )
 
         # questionのテンプレートを構成
         user_message = ""
@@ -158,10 +153,8 @@ class OpenAI_IO:
         self.answer = ""
         return tmp
 
-    async def ask_get_answer(
-        self, question_config: QuestionConfig, data_list: list
-    ) -> str:
-        self.ask(question_config=question_config, data_list=data_list)
+    async def ask_get_answer(self, question_config: QuestionConfig) -> str:
+        self.ask(question_config=question_config)
         return self.get_answer()
 
 
@@ -228,14 +221,9 @@ class MTurk_IO:
         return self.mturk_client.get_account_balance()
 
     # HITを作成し、そのHIT IDを返す
-    def ask(self, question_config: QuestionConfig, data_list: list) -> None:
+    def ask(self, question_config: QuestionConfig) -> None:
         if self.hit_id != "":
             raise Exception("already asking")
-
-        # question_configのデータ挿入
-        question_config = insert_data(
-            question_config=question_config, data_list=data_list
-        )
 
         # テンプレートの構成
         soup = BeautifulSoup("", "html.parser")
@@ -319,10 +307,30 @@ class MTurk_IO:
         return free_text
 
     # HITを作成し、その結果を返す
-    async def ask_get_answer(
-        self, question_config: QuestionConfig, data_list: list
-    ) -> str:
-        self.ask(question_config=question_config, data_list=data_list)
+    async def ask_get_answer(self, question_config: QuestionConfig) -> str:
+        self.ask(question_config=question_config)
         while not self.is_finished():
             await asyncio.sleep(10)
         return self.get_answer()
+
+
+class HAIOClient:
+    def __init__(self, humna_client: MTurk_IO, ai_client: OpenAI_IO) -> None:
+        self.human_client = humna_client
+        self.ai_client = ai_client
+
+    async def ask_get_answer(
+        self,
+        question_config: QuestionConfig,
+        data_list: list,
+        client: Literal["human", "ai"],
+    ) -> str:
+        insert_data(question_config=question_config, data_list=data_list)
+        if client == "human":
+            return await self.human_client.ask_get_answer(
+                question_config=question_config
+            )
+        elif client == "ai":
+            return await self.ai_client.ask_get_answer(question_config=question_config)
+        else:
+            raise Exception("Invalid client.")
