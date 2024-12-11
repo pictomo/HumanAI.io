@@ -1,11 +1,13 @@
 from icecream import ic
 from typing import TypedDict, Literal, Any
 from dotenv import load_dotenv
+import sys
 import os
 import xml.etree.ElementTree as ET
 import json
 import asyncio
 import textwrap
+import hashlib
 import boto3
 from openai import OpenAI
 from bs4 import BeautifulSoup
@@ -314,6 +316,10 @@ class MTurk_IO:
         return self.get_answer()
 
 
+def haio_hash(src: Any) -> str:
+    return hashlib.md5(json.dumps(src, sort_keys=True).encode()).hexdigest()
+
+
 class HAIOClient:
     def __init__(self, humna_client: MTurk_IO, ai_client: OpenAI_IO) -> None:
         self.human_client = humna_client
@@ -325,12 +331,70 @@ class HAIOClient:
         data_list: list,
         client: Literal["human", "ai"],
     ) -> str:
+
+        # haio_cacheディレクトリのパスを取得
+        executed_script_path = os.path.abspath(sys.argv[0])
+        executed_script_dir = os.path.dirname(executed_script_path)
+        cache_dir = os.path.join(executed_script_dir, "haio_cache")
+
+        # haio_cacheディレクトリが存在しない場合は作成
+        if not os.path.exists(cache_dir):
+            os.makedirs(cache_dir)
+
+        # question_config、data_listをハッシュ化
+        question_config_hash = haio_hash(question_config)
+        data_list_hash = haio_hash(data_list)
+
+        # question_configに対するキャッシュファイルが存在するか確認、なければ作成
+        cache_file_path = os.path.join(cache_dir, question_config_hash)
+        if not os.path.exists(cache_file_path):
+            with open(cache_file_path, "w") as f:
+                json.dump({"question_config": question_config, "data_lists": {}}, f)
+
+        with open(cache_file_path, "r") as f:
+            cache = json.load(f)
+            # データに対して回答が存在するか確認、なければ作成
+            data_list_cache = cache["data_lists"].get(data_list_hash, None)
+            if data_list_cache is None:
+                cache["data_lists"][data_list_hash] = {
+                    "data_list": data_list,
+                    "answer_list": [],
+                }
+            else:
+                # 想定するクライアントの回答が存在するか確認、あればそれを返し、なければ何もしない
+                answer_cache = next(
+                    (
+                        item
+                        for item in data_list_cache["answer_list"]
+                        if item["client"] == client
+                    ),
+                    None,
+                )
+                if answer_cache is not None:
+                    return answer_cache["answer"]
+        with open(cache_file_path, "w") as f:
+            json.dump(cache, f)
+
         insert_data(question_config=question_config, data_list=data_list)
         if client == "human":
-            return await self.human_client.ask_get_answer(
+            answer = await self.human_client.ask_get_answer(
                 question_config=question_config
             )
+
         elif client == "ai":
-            return await self.ai_client.ask_get_answer(question_config=question_config)
+            answer = await self.ai_client.ask_get_answer(
+                question_config=question_config
+            )
         else:
             raise Exception("Invalid client.")
+
+        # キャッシュファイルに回答を追加
+        with open(cache_file_path, "r") as f:
+            cache = json.load(f)
+            cache["data_lists"][data_list_hash]["answer_list"].append(
+                {"client": client, "answer": answer}
+            )
+        with open(cache_file_path, "w") as f:
+            json.dump(cache, f)
+
+        return answer
