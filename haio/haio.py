@@ -544,6 +544,7 @@ class HAIOClient:
         elif isinstance(asked_questions, list):
 
             if execution_config.get("method", None) in ("simple", None):
+                # それぞれの問題に対し単純に一度聞いて回答を取得
 
                 clitent_type = execution_config.get("client", None)
                 if clitent_type == None:
@@ -594,35 +595,37 @@ class HAIOClient:
                 if execution_config["client"] == "ai":
                     while question_id_list:
                         for asked_id in list(question_id_list.keys()):
+                            answer = self.ai_client.get_answer(asked_id)
+                            answer_list[question_id_list[asked_id]["index"]] = answer
+                            self.add_cache(
+                                cache_file_path=cache_file_path,
+                                data_list=question_id_list[asked_id]["data_list"],
+                                client="ai",
+                                answer=answer,
+                            )
+                            question_id_list.pop(asked_id)
+                elif execution_config["client"] == "human":
+                    while question_id_list:
+                        for asked_id in list(question_id_list.keys()):
                             if self.ai_client.is_finished(asked_id):
-                                answer = self.ai_client.get_answer(asked_id)
+                                answer = self.human_client.get_answer(asked_id)
                                 answer_list[question_id_list[asked_id]["index"]] = (
                                     answer
                                 )
                                 self.add_cache(
                                     cache_file_path=cache_file_path,
                                     data_list=question_id_list[asked_id]["data_list"],
-                                    client="ai",
+                                    client="human",
                                     answer=answer,
                                 )
                                 question_id_list.pop(asked_id)
                         await asyncio.sleep(check_frequency)
-                elif execution_config["client"] == "human":
-                    while question_id_list:
-                        for asked_id in list(question_id_list.keys()):
-                            answer = self.human_client.get_answer(asked_id)
-                            answer_list[question_id_list[asked_id]["index"]] = answer
-                            self.add_cache(
-                                cache_file_path=cache_file_path,
-                                data_list=question_id_list[asked_id]["data_list"],
-                                client="human",
-                                answer=answer,
-                            )
-                            question_id_list.pop(asked_id)
 
                 return answer_list
 
             elif execution_config["method"] == "cta":
+                # CTAによる回答取得
+
                 quality_requirement = execution_config.get("quality_requirement", None)
                 if quality_requirement is None:
                     raise Exception("Quality requirement is not set.")
