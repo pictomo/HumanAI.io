@@ -13,6 +13,7 @@ python-dotenv
 asyncio
 aiohttp
 openai
+scipy
 boto3
 boto3-stubs
 beautifulsoup4
