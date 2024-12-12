@@ -16,31 +16,29 @@ async def main() -> None:
     data_lists = [
         ["https://s3.amazonaws.com/cv-demo-images/one-bird.jpg"],
         ["https://s3.amazonaws.com/cv-demo-images/two-birds.jpg"],
+        ["https://s3.amazonaws.com/cv-demo-images/cats-and-dogs.jpg"],
+        ["https://s3.amazonaws.com/cv-demo-images/basketball-outdoor.jpg"],
     ]
 
     question_template = {
-        "title": "Describe Image",
-        "description": "Describe the image.",
+        "title": "Classify the image.",
+        "description": "Classify the image.",
         "question": [
             {
                 "tag": "h2",
-                "value": "Please briefly describe the image.",
+                "value": "Is the number of animals in the image 0, 1, or multiple?",
+            },
+            {
+                "tag": "p",
+                "value": "Please do not count humans as animals.",
             },
             {
                 "tag": "img",
                 "src": 0,
             },
         ],
-        "answer": {"type": "text"},
+        "answer": {"type": "select", "options": ["0", "1", "multiple"]},
     }
-
-    # print(
-    #     await haio_client.ask_get_answer(
-    #         question_template=question_template,
-    #         data_list=data_lists[0],
-    #         client="ai",
-    #     )
-    # )
 
     asked_questions = []
 
