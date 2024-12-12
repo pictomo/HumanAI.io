@@ -1,8 +1,9 @@
 from icecream import ic
-from typing import TypedDict, Literal, Any
+from typing import TypedDict, Literal, Union, Any
 from dotenv import load_dotenv
 import sys
 import os
+import copy
 import xml.etree.ElementTree as ET
 import json
 import asyncio
@@ -27,33 +28,17 @@ class QuestionConfig(TypedDict):
     answer: dict
 
 
-def insert_data(question_config: QuestionConfig, data_list: list) -> QuestionConfig:
-    question_config_copy = question_config.copy()
-    for i in range(len(question_config_copy["question"])):
-        if type(question_config_copy["question"][i]["value"]) == int:
-            question_config_copy["question"][i]["value"] = data_list[
-                question_config_copy["question"][i]["value"]
-            ]
-    if type(question_config_copy["answer"]["type"]) in ["int", "text"]:
-        if type(question_config_copy["answer"]["value"]) == int:
-            question_config_copy["answer"]["value"] = data_list[
-                question_config_copy["answer"]["value"]
-            ]
-        elif type(question_config_copy["answer"]["type"]) == "select":
-            for i in range(len(question_config_copy["answer"]["options"])):
-                if type(question_config_copy["answer"]["options"][i]) == int:
-                    question_config_copy["answer"]["options"][i] = data_list[
-                        question_config_copy["answer"]["options"][i]
-                    ]
-    return question_config_copy
-
-
 class OpenAI_IO:
-    openai_client = OpenAI()
-    answer = ""
+    def __init__(self) -> None:
+        self.openai_client = OpenAI()
+        self.asked: dict[str, str] = {}
 
-    def ask(self, question_config: QuestionConfig) -> None:
-        if self.answer != "":
+    def ask(self, question_config: QuestionConfig) -> str:
+        question_config_hash = haio_hash(question_config)
+
+        # OpenAI_IOでは、回答を取得せずに同じ質問を複数回聞くことはできない
+        # 既に質問済みならエラーを返す
+        if question_config_hash in self.asked:
             raise Exception("already asking")
 
         # questionのテンプレートを構成
@@ -139,25 +124,30 @@ class OpenAI_IO:
 
         if completion.choices[0].message.content:
             answer_objstr = completion.choices[0].message.content
-            self.answer = json.loads(answer_objstr)["answer"]
+            self.asked[question_config_hash] = json.loads(answer_objstr)["answer"]
         else:
             raise Exception("The model returned empty response.")
 
-    def is_finished(self) -> bool:
-        if self.answer == "":
-            raise Exception("never asked")
-        return self.answer != ""
+        return question_config_hash
 
-    def get_answer(self) -> str:
-        if self.answer == "":
+    def is_finished(self, id: str) -> bool:
+        # idはquestion_config_hash
+        if id not in self.asked:
             raise Exception("never asked")
-        tmp = self.answer
-        self.answer = ""
+        return self.asked[id] != ""  # 実質的には常にTrue
+
+    def get_answer(self, id: str) -> str:
+        # idはquestion_config_hash
+        if id not in self.asked:
+            raise Exception("never asked")
+        tmp = self.asked[id]
+        self.asked[id] = ""
+        self.asked.pop(id)
         return tmp
 
     async def ask_get_answer(self, question_config: QuestionConfig) -> str:
-        self.ask(question_config=question_config)
-        return self.get_answer()
+        id = self.ask(question_config=question_config)
+        return self.get_answer(id)
 
 
 # template1: str = textwrap.dedent("""\
@@ -210,22 +200,26 @@ template2: str = textwrap.dedent(
 
 
 class MTurk_IO:
-    mturk_client = boto3.client(
-        "mturk",
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name="us-east-1",
-        endpoint_url="https://mturk-requester-sandbox.us-east-1.amazonaws.com",
-    )
-    hit_id: str = ""
+    def __init__(self) -> None:
+        self.mturk_client = boto3.client(
+            "mturk",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            region_name="us-east-1",
+            endpoint_url="https://mturk-requester-sandbox.us-east-1.amazonaws.com",
+        )
+        self.asked: list[str] = []
 
     def test(self) -> dict:
         return self.mturk_client.get_account_balance()
 
     # HITを作成し、そのHIT IDを返す
-    def ask(self, question_config: QuestionConfig) -> None:
-        if self.hit_id != "":
-            raise Exception("already asking")
+    def ask(self, question_config: QuestionConfig) -> str:
+
+        # MTurk_IOでは、全く同じ質問を複数回聞ける
+        # # 既に質問済みならエラーを返す
+        # if self.hit_id != "":
+        #     raise Exception("already asking")
 
         # テンプレートの構成
         soup = BeautifulSoup("", "html.parser")
@@ -275,26 +269,28 @@ class MTurk_IO:
         )
 
         print("HIT ID:", res["HIT"]["HITId"])
-        self.hit_id = res["HIT"]["HITId"]
+        self.asked.append(res["HIT"]["HITId"])
+        return res["HIT"]["HITId"]
 
     # HIT IDを指定して、そのHITが終了しているかどうかを返す
-    def is_finished(self, hit_id: str | None = None) -> bool:
-        if self.hit_id == "":
+    def is_finished(self, id: str) -> bool:
+        # idはHIT ID
+        if id not in self.asked:
             raise Exception("never asked")
 
-        hit_id = hit_id or self.hit_id
-        res = self.mturk_client.get_hit(HITId=hit_id)
+        res = self.mturk_client.get_hit(HITId=id)
         state = res["HIT"]["HITStatus"]
         return state == "Reviewable" or state == "Reviewing"
 
     # HIT IDを指定して、そのHITの結果を返す
-    def get_answer(self, hit_id: str | None = None) -> str:
-        if self.hit_id == "":
+    def get_answer(self, id: str) -> str:
+        # idはHIT ID
+        if id not in self.asked:
             raise Exception("never asked")
 
-        hit_id = hit_id or self.hit_id
-        res: dict = self.mturk_client.list_assignments_for_hit(HITId=hit_id)
-        self.hit_id = ""
+        res: dict = self.mturk_client.list_assignments_for_hit(HITId=id)
+        if id in self.asked:
+            self.asked.remove(id)
         answer = res["Assignments"][0]["Answer"]
         root = ET.fromstring(answer)
         node = root.find(
@@ -310,14 +306,45 @@ class MTurk_IO:
 
     # HITを作成し、その結果を返す
     async def ask_get_answer(self, question_config: QuestionConfig) -> str:
-        self.ask(question_config=question_config)
-        while not self.is_finished():
+        id = self.ask(question_config=question_config)
+        while not self.is_finished(id=id):
             await asyncio.sleep(10)
-        return self.get_answer()
+        return self.get_answer(id=id)
 
 
 def haio_hash(src: Any) -> str:
     return hashlib.md5(json.dumps(src, sort_keys=True).encode()).hexdigest()
+
+
+class AskedQuestion(TypedDict):
+    question_config: QuestionConfig
+    data_list: list
+
+
+class CacheInfo(TypedDict):
+    cache_file_path: str
+    answer: Union[str, None]
+
+
+def insert_data(question_config: QuestionConfig, data_list: list) -> QuestionConfig:
+    question_config_copy = copy.deepcopy(question_config)
+    for i in range(len(question_config_copy["question"])):
+        if type(question_config_copy["question"][i]["value"]) == int:
+            question_config_copy["question"][i]["value"] = data_list[
+                question_config_copy["question"][i]["value"]
+            ]
+    if type(question_config_copy["answer"]["type"]) in ["int", "text"]:
+        if type(question_config_copy["answer"]["value"]) == int:
+            question_config_copy["answer"]["value"] = data_list[
+                question_config_copy["answer"]["value"]
+            ]
+        elif type(question_config_copy["answer"]["type"]) == "select":
+            for i in range(len(question_config_copy["answer"]["options"])):
+                if type(question_config_copy["answer"]["options"][i]) == int:
+                    question_config_copy["answer"]["options"][i] = data_list[
+                        question_config_copy["answer"]["options"][i]
+                    ]
+    return question_config_copy
 
 
 class HAIOClient:
@@ -325,13 +352,7 @@ class HAIOClient:
         self.human_client = humna_client
         self.ai_client = ai_client
 
-    async def ask_get_answer(
-        self,
-        question_config: QuestionConfig,
-        data_list: list,
-        client: Literal["human", "ai"],
-    ) -> str:
-
+    def get_cache_dir_path(self) -> str:
         # haio_cacheディレクトリのパスを取得
         executed_script_path = os.path.abspath(sys.argv[0])
         executed_script_dir = os.path.dirname(executed_script_path)
@@ -341,46 +362,103 @@ class HAIOClient:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
 
-        # question_config、data_listをハッシュ化
+        return cache_dir
+
+    def get_cache_file_path(self, question_config: QuestionConfig) -> str:
+        # haio_cacheディレクトリのパスを取得
+        cache_dir_path = self.get_cache_dir_path()
+
+        # question_configをハッシュ化
         question_config_hash = haio_hash(question_config)
-        data_list_hash = haio_hash(data_list)
 
         # question_configに対するキャッシュファイルが存在するか確認、なければ作成
-        cache_file_path = os.path.join(cache_dir, question_config_hash)
+        cache_file_path = os.path.join(cache_dir_path, question_config_hash)
         if not os.path.exists(cache_file_path):
             with open(cache_file_path, "w") as f:
                 json.dump({"question_config": question_config, "data_lists": {}}, f)
 
+        return cache_file_path
+
+    def check_cache(
+        self,
+        question_config: QuestionConfig,
+        data_list: list,
+        client: Literal["human", "ai"],
+    ) -> CacheInfo:
+
+        data_list_hash = haio_hash(data_list)
+
+        cache_file_path = self.get_cache_file_path(question_config)
+
         with open(cache_file_path, "r") as f:
             cache = json.load(f)
-            # データに対して回答が存在するか確認、なければ作成
-            data_list_cache = cache["data_lists"].get(data_list_hash, None)
-            if data_list_cache is None:
-                cache["data_lists"][data_list_hash] = {
-                    "data_list": data_list,
-                    "answer_list": [],
+        # データに対する回答格納場所が存在するか確認、なければ作成
+        data_list_cache = cache["data_lists"].get(data_list_hash, None)
+        if data_list_cache is None:
+            cache["data_lists"][data_list_hash] = {
+                "data_list": data_list,
+                "answer_list": [],
+            }
+            with open(cache_file_path, "w") as f:
+                json.dump(cache, f)
+        else:
+            # 想定するクライアントの回答が存在するか確認、あればそれを返し、なければ何もしない
+            answer_cache = next(
+                (
+                    item
+                    for item in data_list_cache["answer_list"]
+                    if item["client"] == client
+                ),
+                None,
+            )
+            if answer_cache is not None:
+                return {
+                    "cache_file_path": cache_file_path,
+                    "answer": answer_cache["answer"],
                 }
-            else:
-                # 想定するクライアントの回答が存在するか確認、あればそれを返し、なければ何もしない
-                answer_cache = next(
-                    (
-                        item
-                        for item in data_list_cache["answer_list"]
-                        if item["client"] == client
-                    ),
-                    None,
-                )
-                if answer_cache is not None:
-                    return answer_cache["answer"]
+
+        return {
+            "cache_file_path": cache_file_path,
+            "answer": None,
+        }
+
+    def add_cache(
+        self,
+        cache_file_path: str,
+        data_list: list,
+        client: Literal["human", "ai"],
+        answer: str,
+    ):
+        with open(cache_file_path, "r") as f:
+            cache = json.load(f)
+        cache["data_lists"][haio_hash(data_list)]["answer_list"].append(
+            {"client": client, "answer": answer}
+        )
         with open(cache_file_path, "w") as f:
             json.dump(cache, f)
 
-        insert_data(question_config=question_config, data_list=data_list)
+    async def ask_get_answer(
+        self,
+        question_config: QuestionConfig,
+        data_list: list,
+        client: Literal["human", "ai"],
+    ) -> str:
+
+        # キャッシュの確認とパスの取得、キャッシュがあれば返す
+        cache_info = self.check_cache(
+            question_config=question_config, data_list=data_list, client=client
+        )
+        if cache_info["answer"] is not None:
+            return cache_info["answer"]
+
+        question_config = insert_data(
+            question_config=question_config, data_list=data_list
+        )
+
         if client == "human":
             answer = await self.human_client.ask_get_answer(
                 question_config=question_config
             )
-
         elif client == "ai":
             answer = await self.ai_client.ask_get_answer(
                 question_config=question_config
@@ -389,12 +467,78 @@ class HAIOClient:
             raise Exception("Invalid client.")
 
         # キャッシュファイルに回答を追加
-        with open(cache_file_path, "r") as f:
-            cache = json.load(f)
-            cache["data_lists"][data_list_hash]["answer_list"].append(
-                {"client": client, "answer": answer}
-            )
-        with open(cache_file_path, "w") as f:
-            json.dump(cache, f)
+
+        self.add_cache(
+            cache_file_path=cache_info["cache_file_path"],
+            data_list=data_list,
+            client=client,
+            answer=answer,
+        )
 
         return answer
+
+    def ask(self, question_config: QuestionConfig, data_list: list) -> AskedQuestion:
+        return {"question_config": question_config, "data_list": data_list}
+
+    async def wait(
+        self, asked_questions: Union[AskedQuestion, list[AskedQuestion]]
+    ) -> Union[str, list[str]]:
+        if isinstance(asked_questions, dict):
+            # 単一問題に対して回答を取得
+            return await self.ask_get_answer(
+                question_config=asked_questions["question_config"],
+                data_list=asked_questions["data_list"],
+                client="human",
+            )
+
+        elif isinstance(asked_questions, list):
+
+            # asked_questionsが全て同じquestion_configであるか確認
+            question_config = asked_questions[0]["question_config"]
+            for asked_question in asked_questions:
+                if asked_question["question_config"] != question_config:
+                    raise Exception(
+                        "Multiple question_configs are mixed. It can only be same question_config in a list."
+                    )
+
+            # 一斉に回答を取得
+
+            answer_list: list[Union[str, None]] = []
+            question_id_list: dict[str, dict] = {}
+            for i in range(len(asked_questions)):
+                cache = self.check_cache(
+                    question_config=asked_questions[i]["question_config"],
+                    data_list=asked_questions[i]["data_list"],
+                    client="human",
+                )
+                cache_answer = cache["answer"]
+                cache_file_path = cache["cache_file_path"]
+                if cache_answer is None:
+                    question_config = insert_data(
+                        question_config=asked_questions[i]["question_config"],
+                        data_list=asked_questions[i]["data_list"],
+                    )
+                    hit_id = self.human_client.ask(question_config=question_config)
+                    question_id_list[hit_id] = {
+                        "index": i,
+                        "data_list": asked_questions[i]["data_list"],
+                    }
+                    answer_list.append(None)
+                else:
+                    answer_list.append(cache_answer)
+            # この時点で、answer_listはキャッシュが存在する場合は回答、存在しない場合はNoneが入っている
+            while question_id_list:
+                for hit_id in list(question_id_list.keys()):
+                    if self.human_client.is_finished(hit_id):
+                        answer = self.human_client.get_answer(hit_id)
+                        answer_list[question_id_list[hit_id]["index"]] = answer
+                        self.add_cache(
+                            cache_file_path=cache_file_path,
+                            data_list=question_id_list[hit_id]["data_list"],
+                            client="human",
+                            answer=answer,
+                        )
+                        question_id_list.pop(hit_id)
+                await asyncio.sleep(10)
+
+            return answer_list
