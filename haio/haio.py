@@ -380,6 +380,9 @@ def insert_data(
     return question_config
 
 
+ClientType = Literal["human", "ai"]
+
+
 class HAIOClient:
     def __init__(self, humna_client: MTurk_IO, ai_client: OpenAI_IO) -> None:
         self.human_client = humna_client
@@ -416,7 +419,7 @@ class HAIOClient:
         self,
         question_template: QuestionTemplate,
         data_list: DataList,
-        client: Literal["human", "ai"],
+        client: ClientType,
     ) -> CacheInfo:
 
         data_list_hash = haio_hash(data_list)
@@ -459,7 +462,7 @@ class HAIOClient:
         self,
         cache_file_path: str,
         data_list: DataList,
-        client: Literal["human", "ai"],
+        client: ClientType,
         answer: str,
     ):
         with open(cache_file_path, "r") as f:
@@ -474,7 +477,7 @@ class HAIOClient:
         self,
         question_template: QuestionTemplate,
         data_list: DataList,
-        client: Literal["human", "ai"],
+        client: ClientType,
     ) -> str:
 
         # キャッシュの確認とパスの取得、キャッシュがあれば返す
@@ -515,6 +518,16 @@ class HAIOClient:
     ) -> AskedQuestion:
         return {"question_template": question_template, "data_list": data_list}
 
+    # asked_questionsが全て同じquestion_templateであるか確認するmethod
+    def check_same_question_template(
+        self, asked_questions: list[AskedQuestion]
+    ) -> bool:
+        question_template = asked_questions[0]["question_template"]
+        for asked_question in asked_questions:
+            if asked_question["question_template"] != question_template:
+                return False
+        return True
+
     async def wait(
         self,
         asked_questions: Union[AskedQuestion, list[AskedQuestion]],
@@ -530,65 +543,73 @@ class HAIOClient:
 
         elif isinstance(asked_questions, list):
 
-            # asked_questionsが全て同じquestion_templateであるか確認
-            question_template = asked_questions[0]["question_template"]
-            for asked_question in asked_questions:
-                if asked_question["question_template"] != question_template:
+            if execution_config.get("method", None) in ("simple", None):
+
+                clitent_type = execution_config.get("client", None)
+                if clitent_type == None:
+                    raise Exception("Client is not set.")
+                if clitent_type not in ("ai", "human"):
+                    raise Exception("Invalid client.")
+
+                if not self.check_same_question_template(asked_questions):
                     raise Exception(
-                        "Multiple question_templates are mixed. It can only be same question_template in a list."
+                        "All asked questions must have the same question template."
                     )
 
-            # 一斉に回答を取得
+                # 一斉に回答を取得
 
-            answer_list: list[Union[str, None]] = []
-            question_id_list: dict[str, dict] = {}
-            for i in range(len(asked_questions)):
-                cache = self.check_cache(
-                    question_template=asked_questions[i]["question_template"],
-                    data_list=asked_questions[i]["data_list"],
-                    client=execution_config["client"],
-                )
-                cache_answer = cache["answer"]
-                cache_file_path = cache["cache_file_path"]
-                if cache_answer is None:
-                    question_config = insert_data(
+                answer_list: list[Union[str, None]] = []
+                question_id_list: dict[str, dict] = {}
+                for i in range(len(asked_questions)):
+                    cache = self.check_cache(
                         question_template=asked_questions[i]["question_template"],
                         data_list=asked_questions[i]["data_list"],
+                        client=execution_config["client"],
                     )
-
-                    if execution_config["client"] == "ai":
-                        asked_id = self.ai_client.ask(question_config=question_config)
-                    elif execution_config["client"] == "human":
-                        asked_id = self.human_client.ask(
-                            question_config=question_config
+                    cache_answer = cache["answer"]
+                    cache_file_path = cache["cache_file_path"]
+                    if cache_answer is None:
+                        question_config = insert_data(
+                            question_template=asked_questions[i]["question_template"],
+                            data_list=asked_questions[i]["data_list"],
                         )
 
-                    question_id_list[asked_id] = {
-                        "index": i,
-                        "data_list": asked_questions[i]["data_list"],
-                    }
-                    answer_list.append(None)
-                else:
-                    answer_list.append(cache_answer)
-            # この時点で、answer_listはキャッシュが存在する場合は回答、存在しない場合はNoneが入っている
-            if execution_config["client"] == "ai":
-                while question_id_list:
-                    for asked_id in list(question_id_list.keys()):
-                        if self.ai_client.is_finished(asked_id):
-                            answer = self.ai_client.get_answer(asked_id)
-                            answer_list[question_id_list[asked_id]["index"]] = answer
-                            self.add_cache(
-                                cache_file_path=cache_file_path,
-                                data_list=question_id_list[asked_id]["data_list"],
-                                client="ai",
-                                answer=answer,
+                        if execution_config["client"] == "ai":
+                            asked_id = self.ai_client.ask(
+                                question_config=question_config
                             )
-                            question_id_list.pop(asked_id)
-                    await asyncio.sleep(check_frequency)
-            elif execution_config["client"] == "human":
-                while question_id_list:
-                    for asked_id in list(question_id_list.keys()):
-                        if self.human_client.is_finished(asked_id):
+                        elif execution_config["client"] == "human":
+                            asked_id = self.human_client.ask(
+                                question_config=question_config
+                            )
+
+                        question_id_list[asked_id] = {
+                            "index": i,
+                            "data_list": asked_questions[i]["data_list"],
+                        }
+                        answer_list.append(None)
+                    else:
+                        answer_list.append(cache_answer)
+                # この時点で、answer_listはキャッシュが存在する場合は回答、存在しない場合はNoneが入っている
+                if execution_config["client"] == "ai":
+                    while question_id_list:
+                        for asked_id in list(question_id_list.keys()):
+                            if self.ai_client.is_finished(asked_id):
+                                answer = self.ai_client.get_answer(asked_id)
+                                answer_list[question_id_list[asked_id]["index"]] = (
+                                    answer
+                                )
+                                self.add_cache(
+                                    cache_file_path=cache_file_path,
+                                    data_list=question_id_list[asked_id]["data_list"],
+                                    client="ai",
+                                    answer=answer,
+                                )
+                                question_id_list.pop(asked_id)
+                        await asyncio.sleep(check_frequency)
+                elif execution_config["client"] == "human":
+                    while question_id_list:
+                        for asked_id in list(question_id_list.keys()):
                             answer = self.human_client.get_answer(asked_id)
                             answer_list[question_id_list[asked_id]["index"]] = answer
                             self.add_cache(
@@ -598,6 +619,23 @@ class HAIOClient:
                                 answer=answer,
                             )
                             question_id_list.pop(asked_id)
-                    await asyncio.sleep(check_frequency)
 
-            return answer_list
+                return answer_list
+
+            elif execution_config["method"] == "cta":
+                quality_requirement = execution_config.get("quality_requirement", None)
+                if quality_requirement is None:
+                    raise Exception("Quality requirement is not set.")
+                if not 0 <= quality_requirement <= 1:
+                    raise Exception("Invalid quality requirement.")
+                if not self.check_same_question_template(asked_questions):
+                    raise Exception(
+                        "All asked questions must have the same question template."
+                    )
+                question_template = asked_questions[0]["question_template"]
+                if question_template["answer"]["type"] != "select":
+                    raise Exception("The answer type must be select.")
+
+                return None
+            else:
+                raise Exception("Invalid method.")
