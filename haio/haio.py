@@ -52,7 +52,9 @@ class OpenAI_IO:
             raise Exception("already asking")
 
         # questionのテンプレートを構成
+        user_content: Union[str, list]
         user_message = ""
+        imgs: list[str] = []
         for question in question_config["question"]:
             match question["tag"]:
                 case "h1":
@@ -69,8 +71,17 @@ class OpenAI_IO:
                     user_message += f"###### {question['value']}\n"
                 case "p":
                     user_message += f"{question['value']}\n"
+                case "img":
+                    imgs.append(question["src"])
                 case _:
                     raise Exception("Invalid tag.")
+
+        if imgs:
+            user_content = [{"type": "text", "text": user_message}]
+            for img in imgs:
+                user_content.append({"type": "image_url", "image_url": {"url": img}})
+        else:
+            user_content = user_message
 
         # answerのテンプレートを構成
 
@@ -127,7 +138,7 @@ class OpenAI_IO:
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message},
+                {"role": "user", "content": user_content},
             ],
             response_format=response_format,
         )
@@ -240,6 +251,9 @@ class MTurk_IO:
                 input_soup = soup.new_tag(question["tag"])
                 input_soup.string = question["value"]
                 soup.append(input_soup)
+            elif question["tag"] == "img":
+                input_soup = soup.new_tag(name="img", attrs={"src": question["src"]})
+                soup.append(input_soup)
             else:
                 raise Exception("Invalid tag.")
 
@@ -341,9 +355,13 @@ def insert_data(
 ) -> QuestionConfig:
     question_config = copy.deepcopy(question_template)
     for i in range(len(question_config["question"])):
-        if type(question_config["question"][i]["value"]) == int:
+        if type(question_config["question"][i].get("value", None)) == int:
             question_config["question"][i]["value"] = data_list[
                 question_config["question"][i]["value"]
+            ]
+        if type(question_config["question"][i].get("src", None)) == int:
+            question_config["question"][i]["src"] = data_list[
+                question_config["question"][i]["src"]
             ]
     if type(question_config["answer"]["type"]) in ["int", "text"]:
         if type(question_config["answer"]["value"]) == int:

@@ -10,12 +10,12 @@ async def main() -> None:
 
     haio_client = HAIOClient(humna_client=human_client, ai_client=ai_client)
 
+    question_template: QuestionTemplate
+
     data_list = [
         "A penny saved is a penny gained.",
         "No pain, no gain.",
     ]
-
-    question_template: QuestionTemplate
 
     # select
     question_template = {
@@ -123,12 +123,6 @@ async def main() -> None:
     answer_list = await answer_list_aiotask
 
     print(answer_list)
-
-    # answer: str = processing_client.make_hit(
-    #     "What is your favorite phrase or saying? Please answer only those words. No semicolon, etc. is needed."
-    # )
-    # print(processing_client.is_finished("3H1C3QRA1IZ4U7SA822N5OWUK2WECM"))
-    # print(processing_client.get_result("3H1C3QRA1IZ4U7SA822N5OWUK2WECM"))
 
 
 if __name__ == "__main__":

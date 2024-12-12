@@ -9,12 +9,12 @@ async def main() -> None:
 
     haio_client = HAIOClient(humna_client=human_client, ai_client=ai_client)
 
+    question_template: QuestionTemplate
+
     data_list = [
         "A penny saved is a penny gained.",
         "No pain, no gain.",
     ]
-
-    question_template: QuestionTemplate
 
     # select
     question_template = {
