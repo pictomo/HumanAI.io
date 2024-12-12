@@ -28,6 +28,16 @@ class QuestionConfig(TypedDict):
     answer: dict
 
 
+class QuestionTemplate(TypedDict):
+    title: str
+    description: str
+    question: list
+    answer: dict
+
+
+DataList = list[str]
+
+
 class OpenAI_IO:
     def __init__(self) -> None:
         self.openai_client = OpenAI()
@@ -65,7 +75,7 @@ class OpenAI_IO:
         # answerのテンプレートを構成
 
         # システムメッセージの初期化
-        system_message: Any = textwrap.dedent(
+        system_message: str = textwrap.dedent(
             """\
             Respond to questions in Markdown format in the same way as a crowdsourcing worker would, providing accurate and concise answers according to the answer format below.
             Write only the answer and no explanation, semicolon, etc. is needed.
@@ -317,8 +327,8 @@ def haio_hash(src: Any) -> str:
 
 
 class AskedQuestion(TypedDict):
-    question_config: QuestionConfig
-    data_list: list
+    question_template: QuestionConfig
+    data_list: DataList
 
 
 class CacheInfo(TypedDict):
@@ -326,25 +336,27 @@ class CacheInfo(TypedDict):
     answer: Union[str, None]
 
 
-def insert_data(question_config: QuestionConfig, data_list: list) -> QuestionConfig:
-    question_config_copy = copy.deepcopy(question_config)
-    for i in range(len(question_config_copy["question"])):
-        if type(question_config_copy["question"][i]["value"]) == int:
-            question_config_copy["question"][i]["value"] = data_list[
-                question_config_copy["question"][i]["value"]
+def insert_data(
+    question_template: QuestionTemplate, data_list: DataList
+) -> QuestionConfig:
+    question_config = copy.deepcopy(question_template)
+    for i in range(len(question_config["question"])):
+        if type(question_config["question"][i]["value"]) == int:
+            question_config["question"][i]["value"] = data_list[
+                question_config["question"][i]["value"]
             ]
-    if type(question_config_copy["answer"]["type"]) in ["int", "text"]:
-        if type(question_config_copy["answer"]["value"]) == int:
-            question_config_copy["answer"]["value"] = data_list[
-                question_config_copy["answer"]["value"]
+    if type(question_config["answer"]["type"]) in ["int", "text"]:
+        if type(question_config["answer"]["value"]) == int:
+            question_config["answer"]["value"] = data_list[
+                question_config["answer"]["value"]
             ]
-        elif type(question_config_copy["answer"]["type"]) == "select":
-            for i in range(len(question_config_copy["answer"]["options"])):
-                if type(question_config_copy["answer"]["options"][i]) == int:
-                    question_config_copy["answer"]["options"][i] = data_list[
-                        question_config_copy["answer"]["options"][i]
+        elif type(question_config["answer"]["type"]) == "select":
+            for i in range(len(question_config["answer"]["options"])):
+                if type(question_config["answer"]["options"][i]) == int:
+                    question_config["answer"]["options"][i] = data_list[
+                        question_config["answer"]["options"][i]
                     ]
-    return question_config_copy
+    return question_config
 
 
 class HAIOClient:
@@ -364,31 +376,31 @@ class HAIOClient:
 
         return cache_dir
 
-    def get_cache_file_path(self, question_config: QuestionConfig) -> str:
+    def get_cache_file_path(self, question_template: QuestionTemplate) -> str:
         # haio_cacheディレクトリのパスを取得
         cache_dir_path = self.get_cache_dir_path()
 
-        # question_configをハッシュ化
-        question_config_hash = haio_hash(question_config)
+        # question_templateをハッシュ化
+        question_template_hash = haio_hash(question_template)
 
-        # question_configに対するキャッシュファイルが存在するか確認、なければ作成
-        cache_file_path = os.path.join(cache_dir_path, question_config_hash)
+        # question_templateに対するキャッシュファイルが存在するか確認、なければ作成
+        cache_file_path = os.path.join(cache_dir_path, question_template_hash)
         if not os.path.exists(cache_file_path):
             with open(cache_file_path, "w") as f:
-                json.dump({"question_config": question_config, "data_lists": {}}, f)
+                json.dump({"question_template": question_template, "data_lists": {}}, f)
 
         return cache_file_path
 
     def check_cache(
         self,
-        question_config: QuestionConfig,
-        data_list: list,
+        question_template: QuestionTemplate,
+        data_list: DataList,
         client: Literal["human", "ai"],
     ) -> CacheInfo:
 
         data_list_hash = haio_hash(data_list)
 
-        cache_file_path = self.get_cache_file_path(question_config)
+        cache_file_path = self.get_cache_file_path(question_template)
 
         with open(cache_file_path, "r") as f:
             cache = json.load(f)
@@ -425,7 +437,7 @@ class HAIOClient:
     def add_cache(
         self,
         cache_file_path: str,
-        data_list: list,
+        data_list: DataList,
         client: Literal["human", "ai"],
         answer: str,
     ):
@@ -439,20 +451,20 @@ class HAIOClient:
 
     async def ask_get_answer(
         self,
-        question_config: QuestionConfig,
-        data_list: list,
+        question_template: QuestionTemplate,
+        data_list: DataList,
         client: Literal["human", "ai"],
     ) -> str:
 
         # キャッシュの確認とパスの取得、キャッシュがあれば返す
         cache_info = self.check_cache(
-            question_config=question_config, data_list=data_list, client=client
+            question_template=question_template, data_list=data_list, client=client
         )
         if cache_info["answer"] is not None:
             return cache_info["answer"]
 
         question_config = insert_data(
-            question_config=question_config, data_list=data_list
+            question_template=question_template, data_list=data_list
         )
 
         if client == "human":
@@ -477,8 +489,10 @@ class HAIOClient:
 
         return answer
 
-    def ask(self, question_config: QuestionConfig, data_list: list) -> AskedQuestion:
-        return {"question_config": question_config, "data_list": data_list}
+    def ask(
+        self, question_template: QuestionTemplate, data_list: DataList
+    ) -> AskedQuestion:
+        return {"question_template": question_template, "data_list": data_list}
 
     async def wait(
         self, asked_questions: Union[AskedQuestion, list[AskedQuestion]]
@@ -486,19 +500,19 @@ class HAIOClient:
         if isinstance(asked_questions, dict):
             # 単一問題に対して回答を取得
             return await self.ask_get_answer(
-                question_config=asked_questions["question_config"],
+                question_template=asked_questions["question_template"],
                 data_list=asked_questions["data_list"],
                 client="human",
             )
 
         elif isinstance(asked_questions, list):
 
-            # asked_questionsが全て同じquestion_configであるか確認
-            question_config = asked_questions[0]["question_config"]
+            # asked_questionsが全て同じquestion_templateであるか確認
+            question_template = asked_questions[0]["question_template"]
             for asked_question in asked_questions:
-                if asked_question["question_config"] != question_config:
+                if asked_question["question_template"] != question_template:
                     raise Exception(
-                        "Multiple question_configs are mixed. It can only be same question_config in a list."
+                        "Multiple question_templates are mixed. It can only be same question_template in a list."
                     )
 
             # 一斉に回答を取得
@@ -507,7 +521,7 @@ class HAIOClient:
             question_id_list: dict[str, dict] = {}
             for i in range(len(asked_questions)):
                 cache = self.check_cache(
-                    question_config=asked_questions[i]["question_config"],
+                    question_template=asked_questions[i]["question_template"],
                     data_list=asked_questions[i]["data_list"],
                     client="human",
                 )
@@ -515,7 +529,7 @@ class HAIOClient:
                 cache_file_path = cache["cache_file_path"]
                 if cache_answer is None:
                     question_config = insert_data(
-                        question_config=asked_questions[i]["question_config"],
+                        question_template=asked_questions[i]["question_template"],
                         data_list=asked_questions[i]["data_list"],
                     )
                     hit_id = self.human_client.ask(question_config=question_config)

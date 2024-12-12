@@ -1,5 +1,5 @@
 from typing import Any
-from haio import OpenAI_IO, MTurk_IO, HAIOClient
+from haio import OpenAI_IO, MTurk_IO, HAIOClient, QuestionTemplate
 import asyncio
 
 
@@ -14,10 +14,10 @@ async def main() -> None:
         "No pain, no gain.",
     ]
 
-    question_config: Any
+    question_template: QuestionTemplate
 
     # select
-    question_config = {
+    question_template = {
         "title": "Favorite Phrase or Saying",
         "description": "Please choose your favorite phrase or saying.",
         "question": [
@@ -38,7 +38,7 @@ async def main() -> None:
     }
 
     # # select
-    # question_config = {
+    # question_template = {
     #     "title": "Favorite Phrase or Saying",
     #     "description": "Please choose your favorite phrase or saying.",
     #     "question": [
@@ -61,7 +61,7 @@ async def main() -> None:
     # text-insert
     data_list = ["What is your favorite phrase or saying?"]
 
-    question_config = {
+    question_template = {
         "title": "Favorite Phrase or Saying",
         "description": "Please tell me your favorite phrase or saying.",
         "question": [
@@ -74,7 +74,7 @@ async def main() -> None:
     }
 
     # # text
-    # question_config = {
+    # question_template = {
     #     "title": "Favorite Phrase or Saying",
     #     "description": "Please tell me your favorite phrase or saying.",
     #     "question": [
@@ -87,7 +87,7 @@ async def main() -> None:
     # }
 
     # # number
-    # question_config = {
+    # question_template = {
     #     "title": "Favorite Number",
     #     "description": "Please tell me your favorite number.",
     #     "question": [
@@ -101,7 +101,7 @@ async def main() -> None:
 
     answer_aiotask = asyncio.create_task(
         haio_client.ask_get_answer(
-            question_config=question_config,
+            question_template=question_template,
             data_list=data_list,
             # client="ai",
             client="human",
