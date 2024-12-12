@@ -34,33 +34,34 @@ async def main() -> None:
         "answer": {"type": "text"},
     }
 
-    print(
-        await haio_client.ask_get_answer(
-            question_template=question_template,
-            data_list=data_lists[0],
-            client="ai",
-        )
-    )
-
-    # asked_questions = []
-
-    # for data_list in data_lists:
-    #     asked_questions.append(
-    #         haio_client.ask(
-    #             question_template=question_template,
-    #             data_list=data_list,
-    #         )
-    #     )
-
-    # answer_list_aiotask = asyncio.create_task(
-    #     haio_client.wait(
-    #         asked_questions=asked_questions,
+    # print(
+    #     await haio_client.ask_get_answer(
+    #         question_template=question_template,
+    #         data_list=data_lists[0],
+    #         client="ai",
     #     )
     # )
 
-    # answer_list = await answer_list_aiotask
+    asked_questions = []
 
-    # print(answer_list)
+    for data_list in data_lists:
+        asked_questions.append(
+            haio_client.ask(
+                question_template=question_template,
+                data_list=data_list,
+            )
+        )
+
+    answer_list_aiotask = asyncio.create_task(
+        haio_client.wait(
+            asked_questions=asked_questions,
+            execution_config={"client": "ai"},
+        )
+    )
+
+    answer_list = await answer_list_aiotask
+
+    print(answer_list)
 
 
 if __name__ == "__main__":

@@ -107,6 +107,7 @@ async def main() -> None:
     answer_aiotask = asyncio.create_task(
         haio_client.wait(
             asked_questions=asked_question,
+            execution_config={"client": "human"},
         )
     )
 

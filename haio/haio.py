@@ -38,6 +38,9 @@ class QuestionTemplate(TypedDict):
 DataList = list[str]
 
 
+check_frequency = 5
+
+
 class OpenAI_IO:
     def __init__(self) -> None:
         self.openai_client = OpenAI()
@@ -332,7 +335,7 @@ class MTurk_IO:
     async def ask_get_answer(self, question_config: QuestionConfig) -> str:
         id = self.ask(question_config=question_config)
         while not self.is_finished(id=id):
-            await asyncio.sleep(10)
+            await asyncio.sleep(check_frequency)
         return self.get_answer(id=id)
 
 
@@ -513,14 +516,16 @@ class HAIOClient:
         return {"question_template": question_template, "data_list": data_list}
 
     async def wait(
-        self, asked_questions: Union[AskedQuestion, list[AskedQuestion]]
+        self,
+        asked_questions: Union[AskedQuestion, list[AskedQuestion]],
+        execution_config: dict,
     ) -> Union[str, list[str]]:
         if isinstance(asked_questions, dict):
             # 単一問題に対して回答を取得
             return await self.ask_get_answer(
                 question_template=asked_questions["question_template"],
                 data_list=asked_questions["data_list"],
-                client="human",
+                client=execution_config["client"],
             )
 
         elif isinstance(asked_questions, list):
@@ -541,7 +546,7 @@ class HAIOClient:
                 cache = self.check_cache(
                     question_template=asked_questions[i]["question_template"],
                     data_list=asked_questions[i]["data_list"],
-                    client="human",
+                    client=execution_config["client"],
                 )
                 cache_answer = cache["answer"]
                 cache_file_path = cache["cache_file_path"]
@@ -550,8 +555,15 @@ class HAIOClient:
                         question_template=asked_questions[i]["question_template"],
                         data_list=asked_questions[i]["data_list"],
                     )
-                    hit_id = self.human_client.ask(question_config=question_config)
-                    question_id_list[hit_id] = {
+
+                    if execution_config["client"] == "ai":
+                        asked_id = self.ai_client.ask(question_config=question_config)
+                    elif execution_config["client"] == "human":
+                        asked_id = self.human_client.ask(
+                            question_config=question_config
+                        )
+
+                    question_id_list[asked_id] = {
                         "index": i,
                         "data_list": asked_questions[i]["data_list"],
                     }
@@ -559,18 +571,33 @@ class HAIOClient:
                 else:
                     answer_list.append(cache_answer)
             # この時点で、answer_listはキャッシュが存在する場合は回答、存在しない場合はNoneが入っている
-            while question_id_list:
-                for hit_id in list(question_id_list.keys()):
-                    if self.human_client.is_finished(hit_id):
-                        answer = self.human_client.get_answer(hit_id)
-                        answer_list[question_id_list[hit_id]["index"]] = answer
-                        self.add_cache(
-                            cache_file_path=cache_file_path,
-                            data_list=question_id_list[hit_id]["data_list"],
-                            client="human",
-                            answer=answer,
-                        )
-                        question_id_list.pop(hit_id)
-                await asyncio.sleep(10)
+            if execution_config["client"] == "ai":
+                while question_id_list:
+                    for asked_id in list(question_id_list.keys()):
+                        if self.ai_client.is_finished(asked_id):
+                            answer = self.ai_client.get_answer(asked_id)
+                            answer_list[question_id_list[asked_id]["index"]] = answer
+                            self.add_cache(
+                                cache_file_path=cache_file_path,
+                                data_list=question_id_list[asked_id]["data_list"],
+                                client="ai",
+                                answer=answer,
+                            )
+                            question_id_list.pop(asked_id)
+                    await asyncio.sleep(check_frequency)
+            elif execution_config["client"] == "human":
+                while question_id_list:
+                    for asked_id in list(question_id_list.keys()):
+                        if self.human_client.is_finished(asked_id):
+                            answer = self.human_client.get_answer(asked_id)
+                            answer_list[question_id_list[asked_id]["index"]] = answer
+                            self.add_cache(
+                                cache_file_path=cache_file_path,
+                                data_list=question_id_list[asked_id]["data_list"],
+                                client="human",
+                                answer=answer,
+                            )
+                            question_id_list.pop(asked_id)
+                    await asyncio.sleep(check_frequency)
 
             return answer_list
