@@ -42,24 +42,18 @@ async def main() -> None:
     #     )
     # )
 
-    asked_questions = []
+    asked_questions: list = []
 
-    for data_list in data_lists:
-        asked_questions.append(
-            haio_client.ask(
-                question_template=question_template,
-                data_list=data_list,
-            )
+    for i, data_list in enumerate(data_lists):
+        asked_questions[i] = haio_client.ask(
+            question_template=question_template,
+            data_list=data_list,
         )
 
-    answer_list_aiotask = asyncio.create_task(
-        haio_client.wait(
-            asked_questions=asked_questions,
-            execution_config={"client": "ai"},
-        )
+    answer_list = await haio_client.wait(
+        asked_questions=asked_questions,
+        execution_config={"client": "ai"},
     )
-
-    answer_list = await answer_list_aiotask
 
     print(answer_list)
 

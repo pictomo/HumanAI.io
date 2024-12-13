@@ -99,16 +99,12 @@ async def main() -> None:
     #     "answer": {"type": "number"},
     # }
 
-    answer_aiotask = asyncio.create_task(
-        haio_client.ask_get_answer(
-            question_template=question_template,
-            data_list=data_list,
-            # client="ai",
-            client="human",
-        )
+    answer = await haio_client.ask_get_answer(
+        question_template=question_template,
+        data_list=data_list,
+        # client="ai",
+        client="human",
     )
-
-    answer = await answer_aiotask
 
     print(answer)
 
