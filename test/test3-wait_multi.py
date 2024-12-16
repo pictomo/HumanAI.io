@@ -104,7 +104,7 @@ async def main() -> None:
     #     "answer": {"type": "number"},
     # }
 
-    asked_questions = []
+    asked_questions: list = []
 
     for i, data_list in enumerate(data_lists):
         asked_questions[i] = haio_client.ask(
