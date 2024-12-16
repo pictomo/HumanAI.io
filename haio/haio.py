@@ -679,12 +679,15 @@ class HAIOClient:
                         number_of_successes = 0
                         number_of_trial = 0
                         for j in task_cluster:
-                            if human_answer_list[i] != None:
+                            if human_answer_list[j] != None:
                                 number_of_trial += 1
                                 if (
-                                    human_answer_list[i] == key
+                                    human_answer_list[j] == key
                                 ):  # 本来はkeyでなく、人間ワーカーの多数決
                                     number_of_successes += 1
+
+                        if number_of_trial == 0:
+                            continue
 
                         binomtest_result = binomtest(
                             k=number_of_successes,
