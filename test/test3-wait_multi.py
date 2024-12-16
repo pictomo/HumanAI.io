@@ -106,10 +106,12 @@ async def main() -> None:
 
     asked_questions: list = []
 
-    for i, data_list in enumerate(data_lists):
-        asked_questions[i] = haio_client.ask(
-            question_template=question_template,
-            data_list=data_list,
+    for data_list in data_lists:
+        asked_questions.append(
+            haio_client.ask(
+                question_template=question_template,
+                data_list=data_list,
+            )
         )
 
     answer_list = await haio_client.wait(
