@@ -391,7 +391,7 @@ class HAIOClient:
         self.human_client = humna_client
         self.ai_client = ai_client
 
-    def get_cache_dir_path(self) -> str:
+    def _get_cache_dir_path(self) -> str:
         # haio_cacheディレクトリのパスを取得
         executed_script_path = os.path.abspath(sys.argv[0])
         executed_script_dir = os.path.dirname(executed_script_path)
@@ -403,9 +403,9 @@ class HAIOClient:
 
         return cache_dir
 
-    def get_cache_file_path(self, question_template: QuestionTemplate) -> str:
+    def _get_cache_file_path(self, question_template: QuestionTemplate) -> str:
         # haio_cacheディレクトリのパスを取得
-        cache_dir_path = self.get_cache_dir_path()
+        cache_dir_path = self._get_cache_dir_path()
 
         # question_templateをハッシュ化
         question_template_hash = haio_hash(question_template)
@@ -418,7 +418,7 @@ class HAIOClient:
 
         return cache_file_path
 
-    def check_cache(
+    def _check_cache(
         self,
         question_template: QuestionTemplate,
         data_list: DataList,
@@ -427,7 +427,7 @@ class HAIOClient:
 
         data_list_hash = haio_hash(data_list)
 
-        cache_file_path = self.get_cache_file_path(question_template)
+        cache_file_path = self._get_cache_file_path(question_template)
 
         with open(cache_file_path, "r") as f:
             cache = json.load(f)
@@ -461,7 +461,7 @@ class HAIOClient:
             "answer": None,
         }
 
-    def add_cache(
+    def _add_cache(
         self,
         cache_file_path: str,
         data_list: DataList,
@@ -484,7 +484,7 @@ class HAIOClient:
     ) -> str:
 
         # キャッシュの確認とパスの取得、キャッシュがあれば返す
-        cache_info = self.check_cache(
+        cache_info = self._check_cache(
             question_template=question_template, data_list=data_list, client=client
         )
         if cache_info["answer"] is not None:
@@ -507,7 +507,7 @@ class HAIOClient:
 
         # キャッシュファイルに回答を追加
 
-        self.add_cache(
+        self._add_cache(
             cache_file_path=cache_info["cache_file_path"],
             data_list=data_list,
             client=client,
@@ -522,7 +522,7 @@ class HAIOClient:
         return {"question_template": question_template, "data_list": data_list}
 
     # asked_questionsが全て同じquestion_templateであるか確認するmethod
-    def check_same_question_template(
+    def _check_same_question_template(
         self, asked_questions: list[AskedQuestion]
     ) -> bool:
         question_template = asked_questions[0]["question_template"]
@@ -556,7 +556,7 @@ class HAIOClient:
                 if clitent_type not in ("ai", "human"):
                     raise Exception("Invalid client.")
 
-                if not self.check_same_question_template(asked_questions):
+                if not self._check_same_question_template(asked_questions):
                     raise Exception(
                         "All asked questions must have the same question template."
                     )
@@ -566,7 +566,7 @@ class HAIOClient:
                 answer_list = []
                 question_id_list: dict[str, dict] = {}
                 for i in range(len(asked_questions)):
-                    cache = self.check_cache(
+                    cache = self._check_cache(
                         question_template=asked_questions[i]["question_template"],
                         data_list=asked_questions[i]["data_list"],
                         client=execution_config["client"],
@@ -601,7 +601,7 @@ class HAIOClient:
                         for asked_id in list(question_id_list.keys()):
                             answer = self.ai_client.get_answer(asked_id)
                             answer_list[question_id_list[asked_id]["index"]] = answer
-                            self.add_cache(
+                            self._add_cache(
                                 cache_file_path=cache_file_path,
                                 data_list=question_id_list[asked_id]["data_list"],
                                 client="ai",
@@ -616,7 +616,7 @@ class HAIOClient:
                                 answer_list[question_id_list[asked_id]["index"]] = (
                                     answer
                                 )
-                                self.add_cache(
+                                self._add_cache(
                                     cache_file_path=cache_file_path,
                                     data_list=question_id_list[asked_id]["data_list"],
                                     client="human",
@@ -635,7 +635,7 @@ class HAIOClient:
                     raise Exception("Quality requirement is not set.")
                 if not 0 <= quality_requirement <= 1:
                     raise Exception("Invalid quality requirement.")
-                if not self.check_same_question_template(asked_questions):
+                if not self._check_same_question_template(asked_questions):
                     raise Exception(
                         "All asked questions must have the same question template."
                     )
