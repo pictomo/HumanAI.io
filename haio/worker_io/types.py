@@ -4,10 +4,6 @@ from haio.types import QuestionConfig
 
 class Worker_IO(metaclass=ABCMeta):
     @abstractmethod
-    def test(self) -> dict:
-        pass
-
-    @abstractmethod
     def ask(self, question_config: QuestionConfig) -> str:
         pass
 
