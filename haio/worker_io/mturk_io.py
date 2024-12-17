@@ -4,12 +4,12 @@ import os
 import xml.etree.ElementTree as ET
 import asyncio
 import textwrap
-from scipy.stats import binomtest
 import boto3
 from bs4 import BeautifulSoup
 
 from haio.common import check_frequency
 from haio.types import QuestionConfig
+from haio.worker_io.types import Worker_IO
 
 
 load_dotenv()
@@ -64,7 +64,7 @@ template2: str = textwrap.dedent(
 )
 
 
-class MTurk_IO:
+class MTurk_IO(Worker_IO):
     def __init__(self) -> None:
         self.mturk_client = boto3.client(
             "mturk",

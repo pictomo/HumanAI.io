@@ -7,12 +7,13 @@ from openai import OpenAI
 
 from haio.common import haio_hash
 from haio.types import QuestionConfig
+from haio.worker_io.types import Worker_IO
 
 
 load_dotenv()
 
 
-class OpenAI_IO:
+class OpenAI_IO(Worker_IO):
     def __init__(self) -> None:
         self.openai_client = OpenAI()
         self.asked: dict[str, str] = {}
