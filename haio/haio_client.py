@@ -203,6 +203,122 @@ class HAIOClient:
                 return False
         return True
 
+    # execution methods
+
+    async def _simple_method(
+        self, asked_questions: list[AskedQuestion], execution_config: dict
+    ) -> list[str]:
+        answer_list: list[Union[str, None]] = []
+        question_id_list: dict[str, dict] = {}
+
+        for i in range(len(asked_questions)):
+            cache = self._check_cache(
+                question_template=asked_questions[i]["question_template"],
+                data_list=asked_questions[i]["data_list"],
+                client=execution_config["client"],
+            )
+            cache_answer = cache["answer"]
+            cache_file_path = cache["cache_file_path"]
+            if cache_answer is None:
+                question_config = insert_data(
+                    question_template=asked_questions[i]["question_template"],
+                    data_list=asked_questions[i]["data_list"],
+                )
+                if execution_config["client"] == "ai":
+                    asked_id = self.ai_client.ask(question_config=question_config)
+                elif execution_config["client"] == "human":
+                    asked_id = self.human_client.ask(question_config=question_config)
+                question_id_list[asked_id] = {
+                    "index": i,
+                    "data_list": asked_questions[i]["data_list"],
+                }
+                answer_list.append(None)
+            else:
+                answer_list.append(cache_answer)
+        # この時点で、answer_listはキャッシュが存在する場合は回答、存在しない場合はNoneが入っている
+
+        if execution_config["client"] == "ai":
+            while question_id_list:
+                for asked_id in list(question_id_list.keys()):
+                    answer = self.ai_client.get_answer(asked_id)
+                    answer_list[question_id_list[asked_id]["index"]] = answer
+                    self._add_cache(
+                        cache_file_path=cache_file_path,
+                        data_list=question_id_list[asked_id]["data_list"],
+                        client="ai",
+                        answer=answer,
+                    )
+                    question_id_list.pop(asked_id)
+        elif execution_config["client"] == "human":
+            while question_id_list:
+                for asked_id in list(question_id_list.keys()):
+                    if self.ai_client.is_finished(asked_id):
+                        answer = self.human_client.get_answer(asked_id)
+                        answer_list[question_id_list[asked_id]["index"]] = answer
+                        self._add_cache(
+                            cache_file_path=cache_file_path,
+                            data_list=question_id_list[asked_id]["data_list"],
+                            client="human",
+                            answer=answer,
+                        )
+                        question_id_list.pop(asked_id)
+                await asyncio.sleep(check_frequency)
+
+        return answer_list
+
+    async def _cta_method(
+        self, asked_questions, quality_requirement, significance_level
+    ) -> list[str]:
+        answer_list: list[Union[str, None]] = [None] * len(asked_questions)
+        human_answer_list: list[Union[str, None]] = [None] * len(asked_questions)
+        task_clusters: dict[str, list] = {}
+        for i, asked_question in enumerate(asked_questions):
+            answer = await self.ask_get_answer(
+                question_template=asked_question["question_template"],
+                data_list=asked_question["data_list"],
+                client="ai",
+            )
+            if answer not in task_clusters:
+                if answer not in task_clusters:
+                    task_clusters[answer] = []
+                task_clusters[answer].append(i)
+        indexed_asked_questions = list(enumerate(asked_questions))
+        random.shuffle(indexed_asked_questions)
+        for i, asked_question in indexed_asked_questions:
+            answer = await self.ask_get_answer(
+                question_template=asked_question["question_template"],
+                data_list=asked_question["data_list"],
+                client="human",
+            )
+            answer_list[i] = answer
+            human_answer_list[i] = answer
+            for key, task_cluster in task_clusters.items():
+                # 統計的検定
+                number_of_successes = 0
+                number_of_trial = 0
+                for j in task_cluster:
+                    if human_answer_list[j] != None:
+                        number_of_trial += 1
+                        if (
+                            human_answer_list[j] == key
+                        ):  # 本来はkeyでなく、人間ワーカーの多数決
+                            number_of_successes += 1
+                if number_of_trial == 0:
+                    continue
+                binomtest_result = binomtest(
+                    k=number_of_successes,
+                    n=number_of_trial,
+                    p=quality_requirement,
+                    alternative="greater",
+                )
+                if binomtest_result.pvalue < significance_level:
+                    for task_index in task_cluster:
+                        if answer_list[task_index] == None:
+                            answer_list[task_index] = (
+                                key  # 本来はkeyでなく、人間ワーカーの多数決
+                            )
+        return answer_list
+
     async def wait(
         self,
         asked_questions: Union[AskedQuestion, list[AskedQuestion]],
@@ -217,7 +333,6 @@ class HAIOClient:
             )
 
         elif isinstance(asked_questions, list):
-            answer_list: list[Union[str, None]]
 
             if execution_config.get("method", None) in ("simple", None):
                 # それぞれの問題に対し単純に一度聞いて回答を取得
@@ -235,69 +350,7 @@ class HAIOClient:
 
                 # 一斉に回答を取得
 
-                answer_list = []
-                question_id_list: dict[str, dict] = {}
-                for i in range(len(asked_questions)):
-                    cache = self._check_cache(
-                        question_template=asked_questions[i]["question_template"],
-                        data_list=asked_questions[i]["data_list"],
-                        client=execution_config["client"],
-                    )
-                    cache_answer = cache["answer"]
-                    cache_file_path = cache["cache_file_path"]
-                    if cache_answer is None:
-                        question_config = insert_data(
-                            question_template=asked_questions[i]["question_template"],
-                            data_list=asked_questions[i]["data_list"],
-                        )
-
-                        if execution_config["client"] == "ai":
-                            asked_id = self.ai_client.ask(
-                                question_config=question_config
-                            )
-                        elif execution_config["client"] == "human":
-                            asked_id = self.human_client.ask(
-                                question_config=question_config
-                            )
-
-                        question_id_list[asked_id] = {
-                            "index": i,
-                            "data_list": asked_questions[i]["data_list"],
-                        }
-                        answer_list.append(None)
-                    else:
-                        answer_list.append(cache_answer)
-                # この時点で、answer_listはキャッシュが存在する場合は回答、存在しない場合はNoneが入っている
-                if execution_config["client"] == "ai":
-                    while question_id_list:
-                        for asked_id in list(question_id_list.keys()):
-                            answer = self.ai_client.get_answer(asked_id)
-                            answer_list[question_id_list[asked_id]["index"]] = answer
-                            self._add_cache(
-                                cache_file_path=cache_file_path,
-                                data_list=question_id_list[asked_id]["data_list"],
-                                client="ai",
-                                answer=answer,
-                            )
-                            question_id_list.pop(asked_id)
-                elif execution_config["client"] == "human":
-                    while question_id_list:
-                        for asked_id in list(question_id_list.keys()):
-                            if self.ai_client.is_finished(asked_id):
-                                answer = self.human_client.get_answer(asked_id)
-                                answer_list[question_id_list[asked_id]["index"]] = (
-                                    answer
-                                )
-                                self._add_cache(
-                                    cache_file_path=cache_file_path,
-                                    data_list=question_id_list[asked_id]["data_list"],
-                                    client="human",
-                                    answer=answer,
-                                )
-                                question_id_list.pop(asked_id)
-                        await asyncio.sleep(check_frequency)
-
-                return answer_list
+                return await self._simple_method(asked_questions, execution_config)
 
             elif execution_config["method"] == "cta":
                 # CTAによる回答取得
@@ -318,62 +371,10 @@ class HAIOClient:
                 if question_template["answer"]["type"] != "select":
                     raise Exception("The answer type must be select.")
 
-                answer_list = [None] * len(asked_questions)
-                human_answer_list: list[Union[str, None]] = [None] * len(
-                    asked_questions
+                return await self._cta_method(
+                    asked_questions=asked_questions,
+                    quality_requirement=quality_requirement,
+                    significance_level=significance_level,
                 )
-
-                task_clusters: dict[str, list] = {}
-                for i, asked_question in enumerate(asked_questions):
-                    answer = await self.ask_get_answer(
-                        question_template=asked_question["question_template"],
-                        data_list=asked_question["data_list"],
-                        client="ai",
-                    )
-                    if answer not in task_clusters:
-                        if answer not in task_clusters:
-                            task_clusters[answer] = []
-                        task_clusters[answer].append(i)
-
-                indexed_asked_questions = list(enumerate(asked_questions))
-                random.shuffle(indexed_asked_questions)
-                for i, asked_question in indexed_asked_questions:
-                    answer = await self.ask_get_answer(
-                        question_template=asked_question["question_template"],
-                        data_list=asked_question["data_list"],
-                        client="human",
-                    )
-                    answer_list[i] = answer
-                    human_answer_list[i] = answer
-                    for key, task_cluster in task_clusters.items():
-
-                        # 統計的検定
-                        number_of_successes = 0
-                        number_of_trial = 0
-                        for j in task_cluster:
-                            if human_answer_list[j] != None:
-                                number_of_trial += 1
-                                if (
-                                    human_answer_list[j] == key
-                                ):  # 本来はkeyでなく、人間ワーカーの多数決
-                                    number_of_successes += 1
-
-                        if number_of_trial == 0:
-                            continue
-
-                        binomtest_result = binomtest(
-                            k=number_of_successes,
-                            n=number_of_trial,
-                            p=quality_requirement,
-                            alternative="greater",
-                        )
-                        if binomtest_result.pvalue < significance_level:
-                            for task_index in task_cluster:
-                                if answer_list[task_index] == None:
-                                    answer_list[task_index] = (
-                                        key  # 本来はkeyでなく、人間ワーカーの多数決
-                                    )
-
-                return answer_list
             else:
                 raise Exception("Invalid method.")
