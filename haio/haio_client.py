@@ -1,18 +1,19 @@
 from icecream import ic
-from typing import TypedDict, Literal, Union
+from typing import overload, TypedDict, Literal
 from dotenv import load_dotenv
 import sys
 import os
 import copy
 import random
 import json
+import uuid
 import asyncio
 from scipy.stats import binomtest
 
 from haio.worker_io.openai_io import OpenAI_IO
 from haio.worker_io.mturk_io import MTurk_IO
-from .common import check_frequency, haio_hash
-from .types import QuestionConfig, QuestionTemplate, DataList
+from .common import check_frequency, haio_hash, haio_uid
+from .types import QuestionConfig, QuestionTemplate, DataList, HAIOCache, DataListCache
 
 
 load_dotenv()
@@ -25,7 +26,7 @@ class AskedQuestion(TypedDict):
 
 class CacheInfo(TypedDict):
     cache_file_path: str
-    answer: Union[str, None]
+    answer: str | None
 
 
 def insert_data(
@@ -63,32 +64,94 @@ class HAIOClient:
         self.human_client = humna_client
         self.ai_client = ai_client
 
-    def _get_cache_dir_path(self) -> str:
+    @overload
+    def _get_cache_dir_path(self, ensure_exist: Literal[True] = True) -> str: ...
+    @overload
+    def _get_cache_dir_path(self, ensure_exist: Literal[False]) -> str | None: ...
+    def _get_cache_dir_path(self, ensure_exist=True):
         # haio_cacheディレクトリのパスを取得
         executed_script_path = os.path.abspath(sys.argv[0])
         executed_script_dir = os.path.dirname(executed_script_path)
         cache_dir = os.path.join(executed_script_dir, "haio_cache")
 
-        # haio_cacheディレクトリが存在しない場合は作成
-        if not os.path.exists(cache_dir):
-            os.makedirs(cache_dir)
+        if not os.path.exists(cache_dir):  # haio_cacheディレクトリが存在しない場合
+            if ensure_exist:  # ensure_existがTrueならディレクトリを作成
+                os.makedirs(cache_dir)
+            else:  # ensure_existがFalseならNoneを返す
+                return None
 
         return cache_dir
 
-    def _get_cache_file_path(self, question_template: QuestionTemplate) -> str:
+    @overload
+    def _get_cache_file_path(
+        self, question_template: QuestionTemplate, ensure_exist: Literal[True] = True
+    ) -> str: ...
+    @overload
+    def _get_cache_file_path(
+        self, question_template: QuestionTemplate, ensure_exist: Literal[False]
+    ) -> str | None: ...
+    def _get_cache_file_path(self, question_template, ensure_exist=True):
         # haio_cacheディレクトリのパスを取得
         cache_dir_path = self._get_cache_dir_path()
 
         # question_templateをハッシュ化
         question_template_hash = haio_hash(question_template)
 
-        # question_templateに対するキャッシュファイルが存在するか確認、なければ作成
+        # question_templateに対するキャッシュファイルが存在するか確認
         cache_file_path = os.path.join(cache_dir_path, question_template_hash)
         if not os.path.exists(cache_file_path):
-            with open(cache_file_path, "w") as f:
-                json.dump({"question_template": question_template, "data_lists": {}}, f)
+            if ensure_exist:  # ensure_existがTrueならキャッシュファイルを作成
+                with open(cache_file_path, "w") as f:
+                    json.dump(
+                        {"question_template": question_template, "data_lists": {}}, f
+                    )
+            else:  # ensure_existがFalseならNoneを返す
+                return None
 
         return cache_file_path
+
+    @overload
+    def _get_data_cache_list(
+        self,
+        question_template: QuestionTemplate,
+        data_list: DataList,
+        ensure_exist: Literal[True],
+    ) -> DataListCache: ...
+    @overload
+    def _get_data_cache_list(
+        self,
+        question_template: QuestionTemplate,
+        data_list: DataList,
+        ensure_exist: Literal[False] = False,
+    ) -> DataListCache | None: ...
+    def _get_data_cache_list(
+        self,
+        question_template,
+        data_list,
+        ensure_exist=False,
+    ):
+        cache_file_path = self._get_cache_file_path(
+            question_template=question_template, ensure_exist=ensure_exist
+        )
+        if cache_file_path is None:
+            return None
+        with open(cache_file_path, "r") as f:
+            cache: HAIOCache = json.load(f)
+        data_list_hash = haio_hash(data_list)
+        data_list_cache = cache["data_lists"].get(data_list_hash, None)
+        if data_list_cache is None:
+            if ensure_exist:
+                cache["data_lists"][data_list_hash] = {
+                    "data_list": data_list,
+                    "answer_list": {},
+                }
+                with open(cache_file_path, "w") as f:
+                    json.dump(cache, f)
+                data_list_cache = cache["data_lists"][data_list_hash]
+            else:
+                return None
+
+        return data_list_cache
 
     def _check_cache(
         self,
@@ -97,36 +160,25 @@ class HAIOClient:
         client: ClientType,
     ) -> CacheInfo:
 
-        data_list_hash = haio_hash(data_list)
-
-        cache_file_path = self._get_cache_file_path(question_template)
-
-        with open(cache_file_path, "r") as f:
-            cache = json.load(f)
+        cache_file_path = self._get_cache_file_path(question_template=question_template)
         # データに対する回答格納場所が存在するか確認、なければ作成
-        data_list_cache = cache["data_lists"].get(data_list_hash, None)
-        if data_list_cache is None:
-            cache["data_lists"][data_list_hash] = {
-                "data_list": data_list,
-                "answer_list": [],
+        data_list_cache = self._get_data_cache_list(
+            question_template=question_template, data_list=data_list, ensure_exist=True
+        )
+        # 想定するクライアントの回答が存在するか確認、あればそれを返し、なければ何もしない
+        answer_cache = next(
+            (
+                item
+                for item in data_list_cache["answer_list"].values()
+                if item["client"] == client
+            ),
+            None,
+        )
+        if answer_cache is not None:
+            return {
+                "cache_file_path": cache_file_path,
+                "answer": answer_cache["answer"],
             }
-            with open(cache_file_path, "w") as f:
-                json.dump(cache, f)
-        else:
-            # 想定するクライアントの回答が存在するか確認、あればそれを返し、なければ何もしない
-            answer_cache = next(
-                (
-                    item
-                    for item in data_list_cache["answer_list"]
-                    if item["client"] == client
-                ),
-                None,
-            )
-            if answer_cache is not None:
-                return {
-                    "cache_file_path": cache_file_path,
-                    "answer": answer_cache["answer"],
-                }
 
         return {
             "cache_file_path": cache_file_path,
@@ -142,11 +194,23 @@ class HAIOClient:
     ):
         with open(cache_file_path, "r") as f:
             cache = json.load(f)
-        cache["data_lists"][haio_hash(data_list)]["answer_list"].append(
-            {"client": client, "answer": answer}
-        )
+        cache["data_lists"][haio_hash(data_list)]["answer_list"][haio_uid()] = {
+            "client": client,
+            "answer": answer,
+        }
         with open(cache_file_path, "w") as f:
             json.dump(cache, f)
+
+    def _ask(self):
+        # キャッシュがあれば取得し、なければタスクを投げる
+        # タスクを投げる = client.ask()
+
+        pass
+
+    def _get_answer_with_cache(self):
+        # 回答を取得し、キャッシュ未追加なら追加する
+
+        pass
 
     async def ask_get_answer(
         self,
@@ -208,7 +272,7 @@ class HAIOClient:
     async def _simple_method(
         self, asked_questions: list[AskedQuestion], execution_config: dict
     ) -> list[str]:
-        answer_list: list[Union[str, None]] = []
+        answer_list: list[str, None] = []
         question_id_list: dict[str, dict] = {}
 
         for i in range(len(asked_questions)):
@@ -269,8 +333,8 @@ class HAIOClient:
     async def _cta_method(
         self, asked_questions, quality_requirement, significance_level
     ) -> list[str]:
-        answer_list: list[Union[str, None]] = [None] * len(asked_questions)
-        human_answer_list: list[Union[str, None]] = [None] * len(asked_questions)
+        answer_list: list[str | None] = [None] * len(asked_questions)
+        human_answer_list: list[str | None] = [None] * len(asked_questions)
         task_clusters: dict[str, list] = {}
         for i, asked_question in enumerate(asked_questions):
             answer = await self.ask_get_answer(
@@ -321,9 +385,9 @@ class HAIOClient:
 
     async def wait(
         self,
-        asked_questions: Union[AskedQuestion, list[AskedQuestion]],
+        asked_questions: AskedQuestion | list[AskedQuestion],
         execution_config: dict,
-    ) -> Union[str, list[str]]:
+    ) -> str | list[str]:
         if isinstance(asked_questions, dict):
             # 単一問題に対して回答を取得
             return await self.ask_get_answer(
