@@ -116,7 +116,7 @@ async def main() -> None:
 
     answer_list = await haio_client.wait(
         asked_questions=asked_questions,
-        execution_config={"client": "human"},
+        execution_config={"client": "ai"},
     )
 
     print(answer_list)

@@ -1,19 +1,19 @@
 from icecream import ic
-from typing import overload, TypedDict, Literal
+from typing import overload, TypedDict, Literal, Tuple
 from dotenv import load_dotenv
 import sys
 import os
 import copy
 import random
 import json
-import uuid
 import asyncio
 from scipy.stats import binomtest
 
+from haio.worker_io.types import Worker_IO
 from haio.worker_io.openai_io import OpenAI_IO
 from haio.worker_io.mturk_io import MTurk_IO
 from .common import check_frequency, haio_hash, haio_uid
-from .types import QuestionConfig, QuestionTemplate, DataList, HAIOCache, DataListCache
+from .types import QuestionConfig, QuestionTemplate, DataList
 
 
 load_dotenv()
@@ -59,10 +59,21 @@ def insert_data(
 ClientType = Literal["human", "ai"]
 
 
+class DataListCache(TypedDict):
+    data_list: DataList
+    answer_list: dict[str, dict]
+
+
+class HAIOCache(TypedDict):
+    question_template: QuestionTemplate
+    data_lists: dict[str, DataListCache]
+
+
 class HAIOClient:
     def __init__(self, humna_client: MTurk_IO, ai_client: OpenAI_IO) -> None:
         self.human_client = humna_client
         self.ai_client = ai_client
+        self.used_cache: dict[str, dict[str, set[str]]] = {}
 
     @overload
     def _get_cache_dir_path(self, ensure_exist: Literal[True] = True) -> str: ...
@@ -158,32 +169,26 @@ class HAIOClient:
         question_template: QuestionTemplate,
         data_list: DataList,
         client: ClientType,
-    ) -> CacheInfo:
+    ) -> Tuple[str | None, dict | None]:
 
-        cache_file_path = self._get_cache_file_path(question_template=question_template)
         # データに対する回答格納場所が存在するか確認、なければ作成
         data_list_cache = self._get_data_cache_list(
             question_template=question_template, data_list=data_list, ensure_exist=True
         )
         # 想定するクライアントの回答が存在するか確認、あればそれを返し、なければ何もしない
-        answer_cache = next(
-            (
-                item
-                for item in data_list_cache["answer_list"].values()
-                if item["client"] == client
-            ),
-            None,
+        used_cache_ids = self.used_cache.get(haio_hash(question_template), {}).get(
+            haio_hash(data_list), set()
         )
-        if answer_cache is not None:
-            return {
-                "cache_file_path": cache_file_path,
-                "answer": answer_cache["answer"],
-            }
+        answer_cache_id, answer_data = next(
+            (
+                (key, item)
+                for key, item in data_list_cache["answer_list"].items()
+                if (key not in used_cache_ids and item["client"] == client)
+            ),
+            (None, None),
+        )
 
-        return {
-            "cache_file_path": cache_file_path,
-            "answer": None,
-        }
+        return answer_cache_id, answer_data
 
     def _add_cache(
         self,
@@ -191,26 +196,110 @@ class HAIOClient:
         data_list: DataList,
         client: ClientType,
         answer: str,
+        cache_id: str | None = None,
     ):
+        if cache_id is None:
+            cache_id = haio_uid()
         with open(cache_file_path, "r") as f:
             cache = json.load(f)
-        cache["data_lists"][haio_hash(data_list)]["answer_list"][haio_uid()] = {
+        cache["data_lists"][haio_hash(data_list)]["answer_list"][cache_id] = {
             "client": client,
             "answer": answer,
         }
         with open(cache_file_path, "w") as f:
             json.dump(cache, f)
 
-    def _ask(self):
+    class RequestedQuestion(TypedDict):
+        question_template: QuestionTemplate
+        data_list: DataList
+        cache_id: str
+        requested_id: str | None
+        client: ClientType
+
+    def _ask(
+        self,
+        question_template: QuestionTemplate,
+        data_list: DataList,
+        client: ClientType,
+    ) -> RequestedQuestion:
         # キャッシュがあれば取得し、なければタスクを投げる
         # タスクを投げる = client.ask()
 
-        pass
+        # キャッシュの有無を確認
+        cache_id, _ = self._check_cache(
+            question_template=question_template, data_list=data_list, client=client
+        )
 
-    def _get_answer_with_cache(self):
+        # used_cacheに格納場所を確保
+        self.used_cache.setdefault(haio_hash(question_template), {})
+        self.used_cache[haio_hash(question_template)].setdefault(
+            haio_hash(data_list), set()
+        )
+
+        requested_id = None
+        if cache_id is None:
+            cache_id = haio_uid()
+            client_entity: Worker_IO
+            match client:
+                case "human":
+                    client_entity = self.human_client
+                case "ai":
+                    client_entity = self.ai_client
+                case _:
+                    raise Exception("Invalid client.")
+
+            requested_id = client_entity.ask(
+                question_config=insert_data(
+                    question_template=question_template, data_list=data_list
+                )
+            )
+
+        self.used_cache[haio_hash(question_template)][haio_hash(data_list)].add(
+            cache_id
+        )
+
+        return {
+            "question_template": question_template,
+            "data_list": data_list,
+            "cache_id": cache_id,
+            "requested_id": requested_id,
+            "client": client,
+        }
+
+    async def _get_answer(self, requested_question: RequestedQuestion) -> str:
         # 回答を取得し、キャッシュ未追加なら追加する
 
-        pass
+        if requested_question["requested_id"] is None:
+            return self._get_data_cache_list(
+                question_template=requested_question["question_template"],
+                data_list=requested_question["data_list"],
+                ensure_exist=True,
+            )["answer_list"][requested_question["cache_id"]]["answer"]
+
+        client_entity: Worker_IO
+        match requested_question["client"]:
+            case "human":
+                client_entity = self.human_client
+            case "ai":
+                client_entity = self.ai_client
+            case _:
+                raise Exception("Invalid client.")
+
+        while not client_entity.is_finished(requested_question["requested_id"]):
+            await asyncio.sleep(check_frequency)
+        answer = client_entity.get_answer(requested_question["requested_id"])
+
+        self._add_cache(
+            cache_file_path=self._get_cache_file_path(
+                question_template=requested_question["question_template"]
+            ),
+            data_list=requested_question["data_list"],
+            client=requested_question["client"],
+            cache_id=requested_question["cache_id"],
+            answer=answer,
+        )
+
+        return answer
 
     async def ask_get_answer(
         self,
@@ -219,37 +308,10 @@ class HAIOClient:
         client: ClientType,
     ) -> str:
 
-        # キャッシュの確認とパスの取得、キャッシュがあれば返す
-        cache_info = self._check_cache(
+        requested_question = self._ask(
             question_template=question_template, data_list=data_list, client=client
         )
-        if cache_info["answer"] is not None:
-            return cache_info["answer"]
-
-        question_config = insert_data(
-            question_template=question_template, data_list=data_list
-        )
-
-        if client == "human":
-            answer = await self.human_client.ask_get_answer(
-                question_config=question_config
-            )
-        elif client == "ai":
-            answer = await self.ai_client.ask_get_answer(
-                question_config=question_config
-            )
-        else:
-            raise Exception("Invalid client.")
-
-        # キャッシュファイルに回答を追加
-
-        self._add_cache(
-            cache_file_path=cache_info["cache_file_path"],
-            data_list=data_list,
-            client=client,
-            answer=answer,
-        )
-
+        answer = await self._get_answer(requested_question)
         return answer
 
     def ask(
@@ -272,61 +334,21 @@ class HAIOClient:
     async def _simple_method(
         self, asked_questions: list[AskedQuestion], execution_config: dict
     ) -> list[str]:
-        answer_list: list[str, None] = []
-        question_id_list: dict[str, dict] = {}
+        answer_list: list[str | None] = []
+        requested_questions: list[HAIOClient.RequestedQuestion] = []
 
-        for i in range(len(asked_questions)):
-            cache = self._check_cache(
-                question_template=asked_questions[i]["question_template"],
-                data_list=asked_questions[i]["data_list"],
+        for asked_question in asked_questions:
+            requested_question = self._ask(
+                question_template=asked_question["question_template"],
+                data_list=asked_question["data_list"],
                 client=execution_config["client"],
             )
-            cache_answer = cache["answer"]
-            cache_file_path = cache["cache_file_path"]
-            if cache_answer is None:
-                question_config = insert_data(
-                    question_template=asked_questions[i]["question_template"],
-                    data_list=asked_questions[i]["data_list"],
-                )
-                if execution_config["client"] == "ai":
-                    asked_id = self.ai_client.ask(question_config=question_config)
-                elif execution_config["client"] == "human":
-                    asked_id = self.human_client.ask(question_config=question_config)
-                question_id_list[asked_id] = {
-                    "index": i,
-                    "data_list": asked_questions[i]["data_list"],
-                }
-                answer_list.append(None)
-            else:
-                answer_list.append(cache_answer)
-        # この時点で、answer_listはキャッシュが存在する場合は回答、存在しない場合はNoneが入っている
+            requested_questions.append(requested_question)
+            answer_list.append(None)
 
-        if execution_config["client"] == "ai":
-            while question_id_list:
-                for asked_id in list(question_id_list.keys()):
-                    answer = self.ai_client.get_answer(asked_id)
-                    answer_list[question_id_list[asked_id]["index"]] = answer
-                    self._add_cache(
-                        cache_file_path=cache_file_path,
-                        data_list=question_id_list[asked_id]["data_list"],
-                        client="ai",
-                        answer=answer,
-                    )
-                    question_id_list.pop(asked_id)
-        elif execution_config["client"] == "human":
-            while question_id_list:
-                for asked_id in list(question_id_list.keys()):
-                    if self.ai_client.is_finished(asked_id):
-                        answer = self.human_client.get_answer(asked_id)
-                        answer_list[question_id_list[asked_id]["index"]] = answer
-                        self._add_cache(
-                            cache_file_path=cache_file_path,
-                            data_list=question_id_list[asked_id]["data_list"],
-                            client="human",
-                            answer=answer,
-                        )
-                        question_id_list.pop(asked_id)
-                await asyncio.sleep(check_frequency)
+        for i, requested_question in enumerate(requested_questions):
+            answer = await self._get_answer(requested_question)
+            answer_list[i] = answer
 
         return answer_list
 
