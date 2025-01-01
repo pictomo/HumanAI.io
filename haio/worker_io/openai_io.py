@@ -10,11 +10,9 @@ from haio.types import QuestionConfig
 from haio.worker_io.types import Worker_IO
 
 
-load_dotenv()
-
-
 class OpenAI_IO(Worker_IO):
     def __init__(self) -> None:
+        load_dotenv()
         self.openai_client = OpenAI()
         self.asked: dict[str, str] = {}
 
@@ -58,8 +56,6 @@ class OpenAI_IO(Worker_IO):
         else:
             user_content = user_message
 
-        # answerのテンプレートを構成
-
         # システムメッセージの初期化
         system_message: str = textwrap.dedent(
             """\
@@ -69,7 +65,7 @@ class OpenAI_IO(Worker_IO):
             answer format: """
         )
 
-        # クエリの初期化
+        # 回答形式のクエリの初期化
         response_format: Any = {
             "type": "json_schema",
             "json_schema": {
@@ -84,7 +80,7 @@ class OpenAI_IO(Worker_IO):
             },
         }
 
-        # 回答形式に応じてシステムメッセージとクエリを構築
+        # 回答形式に応じてシステムメッセージと回答形式を構築
         if question_config["answer"]["type"] == "number":
             system_message += "{{answer: {}}}".format("number")
             response_format["json_schema"]["schema"]["properties"]["answer"][
@@ -117,7 +113,7 @@ class OpenAI_IO(Worker_IO):
             ],
             response_format=response_format,
         )
-        print("Question Config Hash:", question_config_hash)
+        print("OpenAI Question Config Hash:", question_config_hash)
 
         if completion.choices[0].message.content:
             answer_objstr = completion.choices[0].message.content

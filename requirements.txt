@@ -11,8 +11,10 @@ icecream
 # main
 python-dotenv
 asyncio
-aiohttp
+httpx
 openai
+google-generativeai
+grpcio==1.67.1 # 1.68.1 makes unnecessary WORNING, grpcio required by google-generativeai
 scipy
 boto3
 boto3-stubs

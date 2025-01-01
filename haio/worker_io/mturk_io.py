@@ -12,9 +12,6 @@ from haio.types import QuestionConfig
 from haio.worker_io.types import Worker_IO
 
 
-load_dotenv()
-
-
 # template1: str = textwrap.dedent("""\
 # <HTMLQuestion xmlns="http://mechanicalturk.amazonaws.com/AWSMechanicalTurkDataSchemas/2011-11-11/HTMLQuestion.xsd">
 #     <HTMLContent><![CDATA[
@@ -66,6 +63,7 @@ template2: str = textwrap.dedent(
 
 class MTurk_IO(Worker_IO):
     def __init__(self) -> None:
+        load_dotenv()
         self.mturk_client = boto3.client(
             "mturk",
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY"),
