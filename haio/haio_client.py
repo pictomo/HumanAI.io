@@ -424,6 +424,16 @@ class HAIOClient:
                             )
         return answer_list
 
+    async def _gta_method(
+        self, asked_questions, quality_requirement, significance_level
+    ) -> list[str]:
+        answer_list: list[str | None] = [None] * len(asked_questions)
+        human_answer_list: list[str | None] = [None] * len(asked_questions)
+        unapproved_task_clusters: dict[str, list] = {}
+        approved_task_clusters: dict[str, list] = {}
+
+        return answer_list
+
     async def wait(
         self,
         asked_questions: AskedQuestion | list[AskedQuestion],
@@ -477,6 +487,30 @@ class HAIOClient:
                     raise Exception("The answer type must be select.")
 
                 return await self._cta_method(
+                    asked_questions=asked_questions,
+                    quality_requirement=quality_requirement,
+                    significance_level=significance_level,
+                )
+            elif execution_config["method"] == "gta":
+                # GTAによる回答取得
+
+                quality_requirement = execution_config.get("quality_requirement", None)
+                if quality_requirement is None:
+                    raise Exception("Quality requirement is not set.")
+                if not 0 <= quality_requirement <= 1:
+                    raise Exception("Invalid quality requirement.")
+                if not self._check_same_question_template(asked_questions):
+                    raise Exception(
+                        "All asked questions must have the same question template."
+                    )
+                significance_level = execution_config.get("significance_level", 0.05)
+                if not 0 <= significance_level <= 1:
+                    raise Exception("Invalid significance level.")
+                question_template = asked_questions[0]["question_template"]
+                if question_template["answer"]["type"] != "select":
+                    raise Exception("The answer type must be select.")
+
+                return await self._gta_method(
                     asked_questions=asked_questions,
                     quality_requirement=quality_requirement,
                     significance_level=significance_level,

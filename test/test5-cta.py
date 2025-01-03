@@ -1,14 +1,16 @@
-from typing import Any
-from haio import OpenAI_IO, MTurk_IO, HAIOClient, QuestionTemplate
+from haio import MTurk_IO, OpenAI_IO, Gemini_IO, HAIOClient, QuestionTemplate
 import asyncio
 from icecream import ic
 
 
 async def main() -> None:
-    openai_io = OpenAI_IO()
     mturk_io = MTurk_IO()
+    openai_io = OpenAI_IO()
+    gemini_io = Gemini_IO()
 
-    haio_client = HAIOClient(mturk_io=mturk_io, openai_io=openai_io)
+    haio_client = HAIOClient(
+        mturk_io=mturk_io, openai_io=openai_io, gemini_io=gemini_io
+    )
 
     question_template: QuestionTemplate
 
