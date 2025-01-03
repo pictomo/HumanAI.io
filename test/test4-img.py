@@ -5,10 +5,10 @@ from icecream import ic
 
 
 async def main() -> None:
-    ai_client = OpenAI_IO()
-    human_client = MTurk_IO()
+    openai_io = OpenAI_IO()
+    mturk_io = MTurk_IO()
 
-    haio_client = HAIOClient(humna_client=human_client, ai_client=ai_client)
+    haio_client = HAIOClient(mturk_io=mturk_io, openai_io=openai_io)
 
     question_template: QuestionTemplate
 
