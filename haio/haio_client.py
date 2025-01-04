@@ -7,7 +7,7 @@ import copy
 import random
 import json
 import asyncio
-from scipy.stats import binomtest
+from scipy.stats import binomtest, beta
 
 from haio.worker_io.types import Worker_IO
 from haio.worker_io.mturk_io import MTurk_IO
@@ -80,7 +80,7 @@ class HAIOClient:
     ) -> None:
         self.human_client = mturk_io
 
-        self.ai_clients: dict[str, Worker_IO] = {}
+        self.ai_clients: dict[ClientType, Worker_IO] = {}
         if openai_io is not None:
             self.ai_clients["openai"] = openai_io
         if gemini_io is not None:
@@ -371,8 +371,18 @@ class HAIOClient:
 
         return answer_list
 
+    class TaskCluster(TypedDict):
+        task_indexes: set[int]
+        answer: str
+        client: ClientType
+        correct_count: int
+        incorrect_count: int
+
     async def _cta_method(
-        self, asked_questions, quality_requirement, significance_level
+        self,
+        asked_questions: list[AskedQuestion],
+        quality_requirement: float,
+        significance_level: float = 0.05,
     ) -> list[str]:
         answer_list: list[str | None] = [None] * len(asked_questions)
         human_answer_list: list[str | None] = [None] * len(asked_questions)
@@ -425,12 +435,92 @@ class HAIOClient:
         return answer_list
 
     async def _gta_method(
-        self, asked_questions, quality_requirement, significance_level
+        self,
+        asked_questions: list[AskedQuestion],
+        quality_requirement: float,
+        significance_level: float = 0.05,
+        iteration: int = 1000,
     ) -> list[str]:
         answer_list: list[str | None] = [None] * len(asked_questions)
-        human_answer_list: list[str | None] = [None] * len(asked_questions)
-        unapproved_task_clusters: dict[str, list] = {}
-        approved_task_clusters: dict[str, list] = {}
+        ground_truth_list: list[str | None] = [None] * len(asked_questions)
+        unapproved_task_clusters: list[HAIOClient.TaskCluster]
+        approved_task_clusters: list[HAIOClient.TaskCluster] = list()
+
+        # make task clusters
+        unapproved_task_clusters_dict: dict[str, HAIOClient.TaskCluster] = {}
+        for ai_client_name in self.ai_clients.keys():
+            for i, asked_question in enumerate(asked_questions):
+                answer = await self.ask_get_answer(
+                    question_template=asked_question["question_template"],
+                    data_list=asked_question["data_list"],
+                    client=ai_client_name,
+                )
+                if answer not in unapproved_task_clusters_dict:
+                    unapproved_task_clusters_dict[answer] = {
+                        "task_indexes": set(),
+                        "answer": answer,
+                        "client": ai_client_name,
+                        "correct_count": 0,
+                        "incorrect_count": 0,
+                    }
+                unapproved_task_clusters_dict[answer]["task_indexes"].add(i)
+        unapproved_task_clusters = list(unapproved_task_clusters_dict.values())
+
+        # randomize the order of the tasks, for random sampling
+        indexed_asked_questions = list(enumerate(asked_questions))
+        random.shuffle(indexed_asked_questions)
+
+        # sampling and approval
+        for i, asked_question in indexed_asked_questions:
+
+            # get ground truth (from human here)
+            answer = await self.ask_get_answer(
+                question_template=asked_question["question_template"],
+                data_list=asked_question["data_list"],
+                client="human",
+            )
+            ground_truth_list[i] = answer
+            answer_list[i] = answer
+            for task_cluster in unapproved_task_clusters + approved_task_clusters:
+                if i in task_cluster["task_indexes"]:
+                    if task_cluster["answer"] == answer:
+                        task_cluster["correct_count"] += 1
+                    else:
+                        task_cluster["incorrect_count"] += 1
+
+            # check task clusters
+            for index, unapproved_task_cluster in enumerate(unapproved_task_clusters):
+                # statistical test
+                beta_distributions_list: list[list[float]] = []
+                for task_cluster in approved_task_clusters + [unapproved_task_cluster]:
+                    beta_distributions_list.append(
+                        beta.rvs(
+                            a=task_cluster["correct_count"] + 1,
+                            b=task_cluster["incorrect_count"] + 1,
+                            size=iteration,
+                        )
+                    )
+                success_count: int = 0
+                for j in range(iteration):
+                    numerator: float = 0
+                    denominator: int = 0
+                    for index, task_cluster in enumerate(
+                        approved_task_clusters + [unapproved_task_cluster]
+                    ):
+                        numerator += beta_distributions_list[index][j] * len(
+                            task_cluster["task_indexes"]
+                        )
+                        denominator += len(task_cluster["task_indexes"])
+                    if numerator / denominator >= quality_requirement:
+                        success_count += 1
+
+                # task cluster approval
+                if 1 - success_count / iteration < significance_level:
+                    approved_task_clusters.append(unapproved_task_cluster)
+                    unapproved_task_clusters.pop(index)
+                    for task_index in unapproved_task_cluster["task_indexes"]:
+                        if answer_list[task_index] == None:
+                            answer_list[task_index] = unapproved_task_cluster["answer"]
 
         return answer_list
 
@@ -506,6 +596,10 @@ class HAIOClient:
                 significance_level = execution_config.get("significance_level", 0.05)
                 if not 0 <= significance_level <= 1:
                     raise Exception("Invalid significance level.")
+                iteration = execution_config.get("iteration", 1000)
+                if not 0 < iteration:
+                    raise Exception("Invalid iteration.")
+
                 question_template = asked_questions[0]["question_template"]
                 if question_template["answer"]["type"] != "select":
                     raise Exception("The answer type must be select.")
@@ -514,6 +608,7 @@ class HAIOClient:
                     asked_questions=asked_questions,
                     quality_requirement=quality_requirement,
                     significance_level=significance_level,
+                    iteration=iteration,
                 )
             else:
                 raise Exception("Invalid method.")
