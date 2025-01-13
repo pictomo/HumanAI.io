@@ -10,7 +10,6 @@ import asyncio
 from scipy.stats import binomtest, beta
 
 from haio.worker_io.types import Worker_IO
-from haio.worker_io.mturk_io import MTurk_IO
 from haio.worker_io.openai_io import OpenAI_IO
 from haio.worker_io.gemini_io import Gemini_IO
 from .common import check_frequency, haio_hash, haio_uid
@@ -74,7 +73,7 @@ class HAIOCache(TypedDict):
 class HAIOClient:
     def __init__(
         self,
-        mturk_io: MTurk_IO,
+        mturk_io: Worker_IO,
         openai_io: OpenAI_IO | None = None,
         gemini_io: Gemini_IO | None = None,
     ) -> None:
