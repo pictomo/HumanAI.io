@@ -1,5 +1,5 @@
 from abc import abstractmethod, ABCMeta
-from haio.types import QuestionConfig
+from haio.types import QuestionConfig, Answer
 
 
 class Worker_IO(metaclass=ABCMeta):
@@ -12,9 +12,9 @@ class Worker_IO(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def get_answer(self, asked: str) -> str:
+    def get_answer(self, asked: str) -> Answer:
         pass
 
     @abstractmethod
-    async def ask_get_answer(self, question_config: QuestionConfig) -> str:
+    async def ask_get_answer(self, question_config: QuestionConfig) -> Answer:
         pass

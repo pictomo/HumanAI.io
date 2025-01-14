@@ -16,3 +16,5 @@ class QuestionTemplate(TypedDict):
 
 
 DataList = list[str]
+
+Answer = str

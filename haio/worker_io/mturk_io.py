@@ -8,7 +8,7 @@ import boto3
 from bs4 import BeautifulSoup
 
 from haio.common import check_frequency
-from haio.types import QuestionConfig
+from haio.types import QuestionConfig, Answer
 from haio.worker_io.types import Worker_IO
 
 
@@ -149,7 +149,7 @@ class MTurk_IO(Worker_IO):
         return state == "Reviewable" or state == "Reviewing"
 
     # HIT IDを指定して、そのHITの結果を返す
-    def get_answer(self, id: str) -> str:
+    def get_answer(self, id: str) -> Answer:
         # idはHIT ID
         if id not in self.asked:
             raise Exception("never asked")
@@ -167,11 +167,11 @@ class MTurk_IO(Worker_IO):
         )
         if node is None:
             raise Exception("The answer was not found.")
-        free_text: str = node.text or ""
+        free_text: Answer = node.text or ""
         return free_text
 
     # HITを作成し、その結果を返す
-    async def ask_get_answer(self, question_config: QuestionConfig) -> str:
+    async def ask_get_answer(self, question_config: QuestionConfig) -> Answer:
         id = self.ask(question_config=question_config)
         while not self.is_finished(id=id):
             await asyncio.sleep(check_frequency)

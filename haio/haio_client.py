@@ -13,7 +13,7 @@ from haio.worker_io.types import Worker_IO
 from haio.worker_io.openai_io import OpenAI_IO
 from haio.worker_io.gemini_io import Gemini_IO
 from .common import check_frequency, haio_hash, haio_uid
-from .types import QuestionConfig, QuestionTemplate, DataList
+from .types import QuestionConfig, QuestionTemplate, DataList, Answer
 
 
 load_dotenv()
@@ -22,11 +22,6 @@ load_dotenv()
 class AskedQuestion(TypedDict):
     question_template: QuestionConfig
     data_list: DataList
-
-
-class CacheInfo(TypedDict):
-    cache_file_path: str
-    answer: str | None
 
 
 def insert_data(
@@ -60,9 +55,14 @@ client_types = ["human", "openai", "gemini"]
 ClientType = Literal["human", "openai", "gemini"]
 
 
+class AnswerCache(TypedDict):
+    client: ClientType
+    answer: Answer
+
+
 class DataListCache(TypedDict):
     data_list: DataList
-    answer_list: dict[str, dict]
+    answer_list: dict[str, AnswerCache]
 
 
 class HAIOCache(TypedDict):
@@ -183,7 +183,7 @@ class HAIOClient:
         question_template: QuestionTemplate,
         data_list: DataList,
         client: ClientType,
-    ) -> Tuple[str | None, dict | None]:
+    ) -> Tuple[str | None, AnswerCache | None]:
 
         # データに対する回答格納場所が存在するか確認、なければ作成
         data_list_cache = self._get_data_cache_list(
@@ -209,7 +209,7 @@ class HAIOClient:
         cache_file_path: str,
         data_list: DataList,
         client: ClientType,
-        answer: str,
+        answer: Answer,
         cache_id: str | None = None,
     ):
         if cache_id is None:
@@ -282,7 +282,7 @@ class HAIOClient:
             "client": client,
         }
 
-    async def _get_answer(self, requested_question: RequestedQuestion) -> str:
+    async def _get_answer(self, requested_question: RequestedQuestion) -> Answer:
         # 回答を取得し、キャッシュ未追加なら追加する
 
         if requested_question["requested_id"] is None:
@@ -324,7 +324,7 @@ class HAIOClient:
         question_template: QuestionTemplate,
         data_list: DataList,
         client: ClientType,
-    ) -> str:
+    ) -> Answer:
 
         requested_question = self._ask(
             question_template=question_template, data_list=data_list, client=client
@@ -351,8 +351,8 @@ class HAIOClient:
 
     async def _simple_method(
         self, asked_questions: list[AskedQuestion], execution_config: dict
-    ) -> list[str]:
-        answer_list: list[str | None] = []
+    ) -> list[Answer]:
+        answer_list: list[Answer | None] = []
         requested_questions: list[HAIOClient.RequestedQuestion] = []
 
         for asked_question in asked_questions:
@@ -372,7 +372,7 @@ class HAIOClient:
 
     class TaskCluster(TypedDict):
         task_indexes: set[int]
-        answer: str
+        answer: Answer
         client: ClientType
         correct_count: int
         incorrect_count: int
@@ -382,10 +382,10 @@ class HAIOClient:
         asked_questions: list[AskedQuestion],
         quality_requirement: float,
         significance_level: float = 0.05,
-    ) -> list[str]:
-        answer_list: list[str | None] = [None] * len(asked_questions)
-        human_answer_list: list[str | None] = [None] * len(asked_questions)
-        task_clusters: dict[str, list] = {}
+    ) -> list[Answer]:
+        answer_list: list[Answer | None] = [None] * len(asked_questions)
+        human_answer_list: list[Answer | None] = [None] * len(asked_questions)
+        task_clusters: dict[Answer, list] = {}
         for i, asked_question in enumerate(asked_questions):
             answer = await self.ask_get_answer(
                 question_template=asked_question["question_template"],
@@ -393,9 +393,8 @@ class HAIOClient:
                 client="openai",
             )
             if answer not in task_clusters:
-                if answer not in task_clusters:
-                    task_clusters[answer] = []
-                task_clusters[answer].append(i)
+                task_clusters[answer] = []
+            task_clusters[answer].append(i)
         indexed_asked_questions = list(enumerate(asked_questions))
         random.shuffle(indexed_asked_questions)
         for i, asked_question in indexed_asked_questions:
@@ -439,14 +438,14 @@ class HAIOClient:
         quality_requirement: float,
         significance_level: float = 0.05,
         iteration: int = 1000,
-    ) -> list[str]:
-        answer_list: list[str | None] = [None] * len(asked_questions)
-        ground_truth_list: list[str | None] = [None] * len(asked_questions)
+    ) -> list[Answer]:
+        answer_list: list[Answer | None] = [None] * len(asked_questions)
+        ground_truth_list: list[Answer | None] = [None] * len(asked_questions)
         unapproved_task_clusters: list[HAIOClient.TaskCluster]
         approved_task_clusters: list[HAIOClient.TaskCluster] = list()
 
         # make task clusters
-        unapproved_task_clusters_dict: dict[str, HAIOClient.TaskCluster] = {}
+        unapproved_task_clusters_dict: dict[Answer, HAIOClient.TaskCluster] = {}
         for ai_client_name in self.ai_clients.keys():
             for i, asked_question in enumerate(asked_questions):
                 answer = await self.ask_get_answer(
@@ -527,7 +526,7 @@ class HAIOClient:
         self,
         asked_questions: AskedQuestion | list[AskedQuestion],
         execution_config: dict,
-    ) -> str | list[str]:
+    ) -> Answer | list[Answer]:
         if isinstance(asked_questions, dict):
             # 単一問題に対して回答を取得
             return await self.ask_get_answer(

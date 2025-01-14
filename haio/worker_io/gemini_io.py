@@ -7,7 +7,7 @@ import base64
 import google.generativeai as genai
 
 from haio.common import haio_hash
-from haio.types import QuestionConfig
+from haio.types import QuestionConfig, Answer
 from haio.worker_io.types import Worker_IO
 
 
@@ -16,7 +16,7 @@ class Gemini_IO(Worker_IO):
         load_dotenv()
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         self.gemini_client = genai.GenerativeModel("gemini-1.5-flash-latest")
-        self.asked: dict[str, str] = {}
+        self.asked: dict[str, Answer] = {}
 
     def ask(self, question_config: QuestionConfig) -> str:
         question_config_hash = haio_hash(question_config)
@@ -125,7 +125,7 @@ class Gemini_IO(Worker_IO):
             raise Exception("never asked")
         return self.asked[id] != ""  # 実質的には常にTrue
 
-    def get_answer(self, id: str) -> str:
+    def get_answer(self, id: str) -> Answer:
         # idはquestion_config_hash
         if id not in self.asked:
             raise Exception("never asked")
@@ -134,6 +134,6 @@ class Gemini_IO(Worker_IO):
         self.asked.pop(id)
         return tmp
 
-    async def ask_get_answer(self, question_config: QuestionConfig) -> str:
+    async def ask_get_answer(self, question_config: QuestionConfig) -> Answer:
         id = self.ask(question_config=question_config)
         return self.get_answer(id)
