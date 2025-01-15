@@ -20,7 +20,7 @@ load_dotenv()
 
 
 class AskedQuestion(TypedDict):
-    question_template: QuestionConfig
+    question_template: QuestionTemplate
     data_list: DataList
 
 
@@ -370,10 +370,12 @@ class HAIOClient:
 
         return answer_list
 
-    class TaskCluster(TypedDict):
+    class TaskClusterRequired(TypedDict):
         task_indexes: set[int]
-        answer: Answer
         client: ClientType
+
+    class TaskCluster(TaskClusterRequired, total=False):
+        answer: Answer
         correct_count: int
         incorrect_count: int
 
@@ -383,53 +385,85 @@ class HAIOClient:
         quality_requirement: float,
         significance_level: float = 0.05,
     ) -> list[Answer]:
+        # prepare
         answer_list: list[Answer | None] = [None] * len(asked_questions)
-        human_answer_list: list[Answer | None] = [None] * len(asked_questions)
-        task_clusters: dict[Answer, list] = {}
-        for i, asked_question in enumerate(asked_questions):
-            answer = await self.ask_get_answer(
-                question_template=asked_question["question_template"],
-                data_list=asked_question["data_list"],
-                client="openai",
-            )
-            if answer not in task_clusters:
-                task_clusters[answer] = []
-            task_clusters[answer].append(i)
+        answer_candidate_lists: dict[ClientType, list[Answer | None]] = {
+            "human": [None] * len(asked_questions)
+        }
+        for client in self.ai_clients.keys():
+            answer_candidate_lists[client] = [None] * len(asked_questions)
+        unapproved_task_clusters: list[HAIOClient.TaskCluster]
+        approved_task_clusters: list[HAIOClient.TaskCluster] = []
+
+        # get answers from AIs and make task clusters
+        unapproved_task_clusters_dict: dict[
+            str | int | float, HAIOClient.TaskCluster
+        ] = {}
+        for client in self.ai_clients.keys():
+            for i, asked_question in enumerate(asked_questions):
+                answer = await self.ask_get_answer(
+                    question_template=asked_question["question_template"],
+                    data_list=asked_question["data_list"],
+                    client=client,
+                )
+
+                answer_candidate_lists[client][i] = answer
+
+                if answer not in unapproved_task_clusters_dict:
+                    unapproved_task_clusters_dict[answer] = {
+                        "task_indexes": set(),
+                        "client": client,
+                        "correct_count": 0,
+                        "incorrect_count": 0,
+                    }
+                unapproved_task_clusters_dict[answer]["task_indexes"].add(i)
+        unapproved_task_clusters = list(unapproved_task_clusters_dict.values())
+
+        # add given task clusters
+
+        # randomize the order of the tasks, for random sampling
         indexed_asked_questions = list(enumerate(asked_questions))
         random.shuffle(indexed_asked_questions)
-        for i, asked_question in indexed_asked_questions:
+
+        # sampling and approval
+        for task_index, asked_question in indexed_asked_questions:
+            if answer_list[task_index] != None:
+                continue
+
+            # get ground truth (from human here)
             answer = await self.ask_get_answer(
                 question_template=asked_question["question_template"],
                 data_list=asked_question["data_list"],
                 client="human",
             )
-            answer_list[i] = answer
-            human_answer_list[i] = answer
-            for key, task_cluster in task_clusters.items():
-                # 統計的検定
-                number_of_successes = 0
-                number_of_trial = 0
-                for j in task_cluster:
-                    if human_answer_list[j] != None:
-                        number_of_trial += 1
-                        if (
-                            human_answer_list[j] == key
-                        ):  # 本来はkeyでなく、人間ワーカーの多数決
-                            number_of_successes += 1
-                if number_of_trial == 0:
-                    continue
-                binomtest_result = binomtest(
-                    k=number_of_successes,
-                    n=number_of_trial,
-                    p=quality_requirement,
-                    alternative="greater",
-                )
-                if binomtest_result.pvalue < significance_level:
-                    for task_index in task_cluster:
-                        if answer_list[task_index] == None:
-                            answer_list[task_index] = (
-                                key  # 本来はkeyでなく、人間ワーカーの多数決
-                            )
+            answer_list[task_index] = answer
+            answer_candidate_lists["human"][task_index] = answer
+            for task_cluster in unapproved_task_clusters:
+                if task_index in task_cluster["task_indexes"]:
+                    if (
+                        answer_candidate_lists[task_cluster["client"]][task_index]
+                        == answer
+                    ):
+                        task_cluster["correct_count"] += 1
+                    else:
+                        task_cluster["incorrect_count"] += 1
+
+                    # check task clusters
+                    binomtest_result = binomtest(
+                        k=task_cluster["correct_count"],
+                        n=task_cluster["correct_count"]
+                        + task_cluster["incorrect_count"],
+                        p=quality_requirement,
+                        alternative="greater",
+                    )
+                    if binomtest_result.pvalue < significance_level:
+                        approved_task_clusters.append(task_cluster)
+                        unapproved_task_clusters.remove(task_cluster)
+                        for inner_task_index in task_cluster["task_indexes"]:
+                            if answer_list[inner_task_index] == None:
+                                answer_list[inner_task_index] = answer_candidate_lists[
+                                    task_cluster["client"]
+                                ][inner_task_index]
         return answer_list
 
     async def _gta_method(
@@ -470,6 +504,8 @@ class HAIOClient:
 
         # sampling and approval
         for i, asked_question in indexed_asked_questions:
+            if answer_list[i] != None:
+                continue
 
             # get ground truth (from human here)
             answer = await self.ask_get_answer(
