@@ -71,6 +71,22 @@ class HAIOCache(TypedDict):
 
 
 class HAIOClient:
+
+    class TaskClusterRequired(TypedDict):
+        task_indexes: set[int]
+        client: ClientType
+
+    class TaskCluster(TaskClusterRequired, total=False):
+        answer: Answer
+        approved: bool
+        correct_count: int
+        incorrect_count: int
+
+    class MethodState(TypedDict):
+        task_number: int
+        task_clusters_dict: dict[str, "HAIOClient.TaskCluster"]
+        answer_candidate_lists: dict[ClientType, list[Answer | None]]
+
     def __init__(
         self,
         mturk_io: Worker_IO,
@@ -88,6 +104,9 @@ class HAIOClient:
         #     warnings.warn("No AI client is set.")
 
         self.used_cache: dict[str, dict[str, set[str]]] = {}
+
+        # _sequential_cta_1_method state
+        self._sequential_cta_1_method_state: dict[str, HAIOClient.MethodState] = {}
 
     @overload
     def _get_cache_dir_path(self, ensure_exist: Literal[True] = True) -> str: ...
@@ -370,15 +389,6 @@ class HAIOClient:
 
         return answer_list
 
-    class TaskClusterRequired(TypedDict):
-        task_indexes: set[int]
-        client: ClientType
-
-    class TaskCluster(TaskClusterRequired, total=False):
-        answer: Answer
-        correct_count: int
-        incorrect_count: int
-
     async def _cta_method(
         self,
         asked_questions: list[AskedQuestion],
@@ -392,13 +402,10 @@ class HAIOClient:
         }
         for client in self.ai_clients.keys():
             answer_candidate_lists[client] = [None] * len(asked_questions)
-        unapproved_task_clusters: list[HAIOClient.TaskCluster]
-        approved_task_clusters: list[HAIOClient.TaskCluster] = []
+        task_clusters: list[HAIOClient.TaskCluster]
 
         # get answers from AIs and make task clusters
-        unapproved_task_clusters_dict: dict[
-            str | int | float, HAIOClient.TaskCluster
-        ] = {}
+        task_clusters_dict: dict[str | int | float, HAIOClient.TaskCluster] = {}
         for client in self.ai_clients.keys():
             for i, asked_question in enumerate(asked_questions):
                 answer = await self.ask_get_answer(
@@ -409,15 +416,16 @@ class HAIOClient:
 
                 answer_candidate_lists[client][i] = answer
 
-                if answer not in unapproved_task_clusters_dict:
-                    unapproved_task_clusters_dict[answer] = {
+                if client + answer not in task_clusters_dict:
+                    task_clusters_dict[client + answer] = {
                         "task_indexes": set(),
                         "client": client,
+                        "approved": False,
                         "correct_count": 0,
                         "incorrect_count": 0,
                     }
-                unapproved_task_clusters_dict[answer]["task_indexes"].add(i)
-        unapproved_task_clusters = list(unapproved_task_clusters_dict.values())
+                task_clusters_dict[client + answer]["task_indexes"].add(i)
+        task_clusters = list(task_clusters_dict.values())
 
         # add given task clusters
 
@@ -426,7 +434,7 @@ class HAIOClient:
         random.shuffle(indexed_asked_questions)
 
         # sampling and approval
-        for task_index, asked_question in indexed_asked_questions:
+        for task_index, asked_question in enumerate(asked_questions):
             if answer_list[task_index] != None:
                 continue
 
@@ -438,8 +446,11 @@ class HAIOClient:
             )
             answer_list[task_index] = answer
             answer_candidate_lists["human"][task_index] = answer
-            for task_cluster in unapproved_task_clusters:
-                if task_index in task_cluster["task_indexes"]:
+            for task_cluster in task_clusters:
+                if (
+                    not task_cluster["approved"]
+                    and task_index in task_cluster["task_indexes"]
+                ):
                     if (
                         answer_candidate_lists[task_cluster["client"]][task_index]
                         == answer
@@ -457,8 +468,6 @@ class HAIOClient:
                         alternative="greater",
                     )
                     if binomtest_result.pvalue < significance_level:
-                        approved_task_clusters.append(task_cluster)
-                        unapproved_task_clusters.remove(task_cluster)
                         for inner_task_index in task_cluster["task_indexes"]:
                             if answer_list[inner_task_index] == None:
                                 answer_list[inner_task_index] = answer_candidate_lists[
@@ -558,6 +567,141 @@ class HAIOClient:
 
         return answer_list
 
+    async def _sequential_cta_1_method(
+        self,
+        asked_questions: list[AskedQuestion],
+        quality_requirement: float,
+        significance_level: float = 0.05,
+    ) -> list[Answer]:
+        # prepare
+        question_template_hash = haio_hash(asked_questions[0]["question_template"])
+        if question_template_hash not in self._sequential_cta_1_method_state:
+            self._sequential_cta_1_method_state[question_template_hash] = {
+                "task_number": 0,
+                "task_clusters_dict": {},
+                "answer_candidate_lists": {},
+            }
+            for client in self.ai_clients.keys():
+                self._sequential_cta_1_method_state[question_template_hash][
+                    "answer_candidate_lists"
+                ][client] = []
+
+        answer_list: list[Answer | None] = [None] * len(asked_questions)
+
+        # get each question answer
+        for task_index, asked_question in enumerate(asked_questions):
+
+            # get answer from each AI and make task clusters
+            for client in self.ai_clients.keys():
+                answer = await self.ask_get_answer(
+                    question_template=asked_question["question_template"],
+                    data_list=asked_question["data_list"],
+                    client=client,
+                )
+                self._sequential_cta_1_method_state[question_template_hash][
+                    "answer_candidate_lists"
+                ][client].append(answer)
+
+                if (
+                    client + answer
+                    not in self._sequential_cta_1_method_state[question_template_hash][
+                        "task_clusters_dict"
+                    ]
+                ):
+                    self._sequential_cta_1_method_state[question_template_hash][
+                        "task_clusters_dict"
+                    ][client + answer] = {
+                        "task_indexes": set(),
+                        "client": client,
+                        "approved": False,
+                        "correct_count": 0,
+                        "incorrect_count": 0,
+                    }
+
+                # if task_cluster has approved already, apply the answer
+                if (
+                    self._sequential_cta_1_method_state[question_template_hash][
+                        "task_clusters_dict"
+                    ][client + answer]["approved"]
+                    and answer_list[task_index] == None
+                ):
+                    answer_list[task_index] = answer
+                else:
+                    self._sequential_cta_1_method_state[question_template_hash][
+                        "task_clusters_dict"
+                    ][client + answer]["task_indexes"].add(
+                        self._sequential_cta_1_method_state[question_template_hash][
+                            "task_number"
+                        ]
+                        + task_index
+                    )
+
+            if answer_list[task_index] == None:
+                answer = await self.ask_get_answer(
+                    question_template=asked_question["question_template"],
+                    data_list=asked_question["data_list"],
+                    client="human",
+                )
+                answer_list[task_index] = answer
+
+                # update and approve task clusters
+                for task_cluster in self._sequential_cta_1_method_state[
+                    question_template_hash
+                ]["task_clusters_dict"].values():
+                    if (
+                        not task_cluster["approved"]
+                        and (
+                            self._sequential_cta_1_method_state[question_template_hash][
+                                "task_number"
+                            ]
+                            + task_index
+                        )
+                        in task_cluster["task_indexes"]
+                    ):
+                        if (
+                            self._sequential_cta_1_method_state[question_template_hash][
+                                "answer_candidate_lists"
+                            ][task_cluster["client"]][
+                                self._sequential_cta_1_method_state[
+                                    question_template_hash
+                                ]["task_number"]
+                                + task_index
+                            ]
+                            == answer
+                        ):
+                            task_cluster["correct_count"] += 1
+                        else:
+                            task_cluster["incorrect_count"] += 1
+
+                        # check task clusters
+                        binomtest_result = binomtest(
+                            k=task_cluster["correct_count"],
+                            n=task_cluster["correct_count"]
+                            + task_cluster["incorrect_count"],
+                            p=quality_requirement,
+                            alternative="greater",
+                        )
+                        if binomtest_result.pvalue < significance_level:
+                            task_cluster["approved"] = True
+
+        self._sequential_cta_1_method_state[question_template_hash][
+            "task_number"
+        ] += len(asked_questions)
+
+        return answer_list
+
+    async def _sequential_cta_2_method(
+        self,
+    ) -> list[Answer]:
+        answer_list: list[Answer | None] = []
+        return answer_list
+
+    async def _sequential_cta_3_method(
+        self,
+    ) -> list[Answer]:
+        answer_list: list[Answer | None] = []
+        return answer_list
+
     async def wait(
         self,
         asked_questions: AskedQuestion | list[AskedQuestion],
@@ -615,6 +759,32 @@ class HAIOClient:
                     quality_requirement=quality_requirement,
                     significance_level=significance_level,
                 )
+
+            elif execution_config["method"] == "sequential_cta_1":
+                # CTAによる回答取得
+
+                quality_requirement = execution_config.get("quality_requirement", None)
+                if quality_requirement is None:
+                    raise Exception("Quality requirement is not set.")
+                if not 0 <= quality_requirement <= 1:
+                    raise Exception("Invalid quality requirement.")
+                if not self._check_same_question_template(asked_questions):
+                    raise Exception(
+                        "All asked questions must have the same question template."
+                    )
+                significance_level = execution_config.get("significance_level", 0.05)
+                if not 0 <= significance_level <= 1:
+                    raise Exception("Invalid significance level.")
+                question_template = asked_questions[0]["question_template"]
+                if question_template["answer"]["type"] != "select":
+                    raise Exception("The answer type must be select.")
+
+                return await self._sequential_cta_1_method(
+                    asked_questions=asked_questions,
+                    quality_requirement=quality_requirement,
+                    significance_level=significance_level,
+                )
+
             elif execution_config["method"] == "gta":
                 # GTAによる回答取得
 
