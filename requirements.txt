@@ -7,6 +7,7 @@ pip-autoremove
 
 # debug
 icecream
+pyperclip
 
 # main
 python-dotenv
