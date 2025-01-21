@@ -10,8 +10,9 @@ import asyncio
 from scipy.stats import binomtest, beta
 
 from haio.worker_io.types import Worker_IO
-from haio.worker_io.openai_io import OpenAI_IO
+from haio.worker_io.bedrock_io import Bedrock_IO
 from haio.worker_io.gemini_io import Gemini_IO
+from haio.worker_io.openai_io import OpenAI_IO
 from .common import check_frequency, haio_hash, haio_uid
 from .types import QuestionConfig, QuestionTemplate, DataList, Answer
 
@@ -51,8 +52,8 @@ def insert_data(
     return question_config
 
 
-client_types = ["human", "openai", "gemini"]
-ClientType = Literal["human", "openai", "gemini"]
+client_types = ["human", "openai", "gemini", "llama", "claude"]
+ClientType = Literal["human", "openai", "gemini", "llama", "claude"]
 
 
 class AnswerCache(TypedDict):
@@ -92,6 +93,8 @@ class HAIOClient:
         mturk_io: Worker_IO,
         openai_io: OpenAI_IO | None = None,
         gemini_io: Gemini_IO | None = None,
+        llama_io: Bedrock_IO | None = None,
+        claude_io: Bedrock_IO | None = None,
     ) -> None:
         self.human_client = mturk_io
 
@@ -100,6 +103,10 @@ class HAIOClient:
             self.ai_clients["openai"] = openai_io
         if gemini_io is not None:
             self.ai_clients["gemini"] = gemini_io
+        if llama_io is not None:
+            self.ai_clients["llama"] = llama_io
+        if claude_io is not None:
+            self.ai_clients["claude"] = claude_io
         # if len(self.ai_clients) == 0:
         #     warnings.warn("No AI client is set.")
 
@@ -273,15 +280,12 @@ class HAIOClient:
         if cache_id is None:
             cache_id = haio_uid()
             client_entity: Worker_IO
-            match client:
-                case "human":
-                    client_entity = self.human_client
-                case "openai":
-                    client_entity = self.ai_clients["openai"]
-                case "gemini":
-                    client_entity = self.ai_clients["gemini"]
-                case _:
-                    raise Exception("Invalid client.")
+            if client == "human":
+                client_entity = self.human_client
+            elif client in self.ai_clients:
+                client_entity = self.ai_clients[client]
+            else:
+                raise Exception("Invalid client.")
 
             requested_id = client_entity.ask(
                 question_config=insert_data(
@@ -312,15 +316,12 @@ class HAIOClient:
             )["answer_list"][requested_question["cache_id"]]["answer"]
 
         client_entity: Worker_IO
-        match requested_question["client"]:
-            case "human":
-                client_entity = self.human_client
-            case "openai":
-                client_entity = self.ai_clients["openai"]
-            case "gemini":
-                client_entity = self.ai_clients["gemini"]
-            case _:
-                raise Exception("Invalid client.")
+        if requested_question["client"] == "human":
+            client_entity = self.human_client
+        elif requested_question["client"] in self.ai_clients:
+            client_entity = self.ai_clients[requested_question["client"]]
+        else:
+            raise Exception("Invalid client.")
 
         while not client_entity.is_finished(requested_question["requested_id"]):
             await asyncio.sleep(check_frequency)
