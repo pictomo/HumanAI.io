@@ -1,9 +1,11 @@
 import asyncio
-from haio import Gemini_IO, QuestionConfig
+from haio import Gemini_IO, Bedrock_IO, QuestionConfig
 
 
 async def main() -> None:
-    worker_io = Gemini_IO()
+    # worker_io = Gemini_IO()
+    worker_io = Bedrock_IO("us.meta.llama3-2-90b-instruct-v1:0")
+    # worker_io = Bedrock_IO("us.anthropic.claude-3-5-sonnet-20241022-v2:0")
     question_config: QuestionConfig
     question_config = {
         "title": "Generate a sentence.",
@@ -17,24 +19,31 @@ async def main() -> None:
         "title": "Generate a sentence.",
         "description": "Generate a sentence.",
         "question": [
-            {"tag": "p", "value": "Which do you like more 1 or 2?"},
+            {
+                "tag": "p",
+                "value": "Which do you like.",
+            },
         ],
-        "answer": {"type": "select", "options": ["1", "2"]},
+        "answer": {"type": "select", "options": ["-39", "90", "100", "200"]},
     }
     question_config = {
         "title": "Generate a sentence.",
         "description": "Generate a sentence.",
         "question": [
+            # {
+            #     "tag": "img",
+            #     "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGP4z8AAQv9ZQBQDAyMDADr9BQGou6mHAAAAAElFTkSuQmCC",
+            # },
             {
                 "tag": "img",
                 "src": "https://s3.amazonaws.com/cv-demo-images/one-bird.jpg",
             },
-            # {
-            #     "tag": "img",
-            #     "src": "https://s3.amazonaws.com/cv-demo-images/two-birds.jpg",
-            # },
-            # {"tag": "p", "value": "Please describe 2 images."},
-            {"tag": "p", "value": "Please describe the image."},
+            {
+                "tag": "img",
+                "src": "https://s3.amazonaws.com/cv-demo-images/two-birds.jpg",
+            },
+            {"tag": "p", "value": "Please describe images."},
+            # {"tag": "p", "value": "Please describe the image."},
         ],
         "answer": {"type": "text"},
     }

@@ -102,7 +102,7 @@ class Gemini_IO(Worker_IO):
                 )
             user_content.append(user_message)
         else:
-            user_content = user_message
+            user_content = system_message + "\n" + user_message
 
         # タスクの構成と発行
         response = self.gemini_client.generate_content(

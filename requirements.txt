@@ -21,3 +21,4 @@ boto3
 boto3-stubs
 beautifulsoup4
 types-beautifulsoup4
+pillow
