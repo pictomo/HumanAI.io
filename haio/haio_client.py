@@ -617,7 +617,7 @@ class HAIOClient:
                     answer_list[task_index] = answer
                 else:
                     state["task_clusters_dict"][task_cluster_id]["task_indexes"].add(
-                        state["task_number"] + task_index
+                        state["task_number"]
                     )
 
             # ask human and approve the task clusters
@@ -633,12 +633,11 @@ class HAIOClient:
                 for task_cluster in state["task_clusters_dict"].values():
                     if (
                         not task_cluster["approved"]
-                        and (state["task_number"] + task_index)
-                        in task_cluster["task_indexes"]
+                        and (state["task_number"]) in task_cluster["task_indexes"]
                     ):
                         if (
                             state["answer_candidate_lists"][task_cluster["client"]][
-                                state["task_number"] + task_index
+                                state["task_number"]
                             ]
                             == answer
                         ):
@@ -657,7 +656,7 @@ class HAIOClient:
                         if binomtest_result.pvalue < significance_level:
                             task_cluster["approved"] = True
 
-        state["task_number"] += len(asked_questions)
+            state["task_number"] += 1
 
         return answer_list
 
@@ -723,7 +722,7 @@ class HAIOClient:
                     answer_list[tesk_index] = answer
                 else:
                     state["task_clusters_dict"][task_cluster_id]["task_indexes"].add(
-                        state["task_number"] + tesk_index
+                        state["task_number"]
                     )
 
             # ask human
@@ -738,12 +737,11 @@ class HAIOClient:
                 # update task clusters
                 for task_cluster in state["task_clusters_dict"].values():
                     if not task_cluster["checked"] and (
-                        (state["task_number"] + tesk_index)
-                        in task_cluster["task_indexes"]
+                        (state["task_number"]) in task_cluster["task_indexes"]
                     ):
                         if (
                             state["answer_candidate_lists"][task_cluster["client"]][
-                                state["task_number"] + tesk_index
+                                state["task_number"]
                             ]
                             == answer
                         ):
@@ -768,7 +766,8 @@ class HAIOClient:
                                 task_cluster["approved"] = True
                             task_cluster["checked"] = True
 
-        state["task_number"] += len(asked_questions)
+            state["task_number"] += 1
+            ic(state)
 
         return answer_list
 
