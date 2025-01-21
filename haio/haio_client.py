@@ -38,17 +38,6 @@ def insert_data(
             question_config["question"][i]["src"] = data_list[
                 question_config["question"][i]["src"]
             ]
-    if type(question_config["answer"]["type"]) in ["int", "text"]:
-        if type(question_config["answer"]["value"]) == int:
-            question_config["answer"]["value"] = data_list[
-                question_config["answer"]["value"]
-            ]
-        elif type(question_config["answer"]["type"]) == "select":
-            for i in range(len(question_config["answer"]["options"])):
-                if type(question_config["answer"]["options"][i]) == int:
-                    question_config["answer"]["options"][i] = data_list[
-                        question_config["answer"]["options"][i]
-                    ]
     return question_config
 
 
