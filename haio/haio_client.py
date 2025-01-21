@@ -767,7 +767,6 @@ class HAIOClient:
                             task_cluster["checked"] = True
 
             state["task_number"] += 1
-            ic(state)
 
         return answer_list
 
