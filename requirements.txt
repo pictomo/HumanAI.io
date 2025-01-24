@@ -10,15 +10,17 @@ icecream
 pyperclip
 
 # main
-python-dotenv
 asyncio
-httpx
-openai
-google-generativeai
-grpcio==1.67.1 # 1.68.1 makes unnecessary WORNING, grpcio required by google-generativeai
-scipy
+beautifulsoup4
 boto3
 boto3-stubs
-beautifulsoup4
-types-beautifulsoup4
+google-generativeai
+grpcio==1.67.1 # 1.68.1 makes unnecessary WORNING, grpcio required by google-generativeai
+httpx
+openai
 pillow
+python-dotenv
+scipy
+sortedcontainers
+sortedcontainers-stubs
+types-beautifulsoup4
