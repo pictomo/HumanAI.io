@@ -920,7 +920,6 @@ class HAIOClient:
                                 answer_list[inner_task_index] = state[
                                     "answer_candidate_lists"
                                 ][task_cluster["client"]][inner_task_index]
-            ic(task_clusters_dict)
 
             # check if questions have been answered
             if None not in answer_list[-len(asked_questions) :]:
