@@ -18,9 +18,6 @@ from .common import check_frequency, haio_hash, haio_uid
 from .types import QuestionConfig, QuestionTemplate, DataList, Answer
 
 
-load_dotenv()
-
-
 class AskedQuestion(TypedDict):
     question_template: QuestionTemplate
     data_list: DataList
@@ -388,11 +385,14 @@ class HAIOClient:
 
         return answer_list
 
+    _default_significance_level = 0.05
+    _default_gta_iteration = 1000
+
     async def _cta_method(
         self,
         asked_questions: list[AskedQuestion],
         quality_requirement: float,
-        significance_level: float = 0.05,
+        significance_level: float = _default_significance_level,
     ) -> list[Answer]:
         # prepare
         answer_list: list[Answer | None] = [None] * len(asked_questions)
@@ -479,8 +479,8 @@ class HAIOClient:
         self,
         asked_questions: list[AskedQuestion],
         quality_requirement: float,
-        significance_level: float = 0.05,
-        iteration: int = 1000,
+        significance_level: float = _default_significance_level,
+        iteration: int = _default_gta_iteration,
     ) -> list[Answer]:
         answer_list: list[Answer | None] = [None] * len(asked_questions)
         ground_truth_list: list[Answer | None] = [None] * len(asked_questions)
@@ -571,7 +571,7 @@ class HAIOClient:
         self,
         asked_questions: list[AskedQuestion],
         quality_requirement: float,
-        significance_level: float = 0.05,
+        significance_level: float = _default_significance_level,
     ) -> list[Answer]:
         # prepare
         state_id = (
@@ -674,7 +674,7 @@ class HAIOClient:
         asked_questions: list[AskedQuestion],
         quality_requirement: float,
         sample_size: int,
-        significance_level: float = 0.05,
+        significance_level: float = _default_significance_level,
     ) -> list[Answer]:
         # prepare
         state_id = (
@@ -784,7 +784,7 @@ class HAIOClient:
         self,
         asked_questions: list[AskedQuestion],
         quality_requirement: float,
-        significance_level: float = 0.05,
+        significance_level: float = _default_significance_level,
     ) -> list[Answer]:
         # prepare state
         state_id: Final = (
@@ -925,7 +925,7 @@ class HAIOClient:
             if None not in answer_list[-len(asked_questions) :]:
                 return answer_list[-len(asked_questions) :]
 
-        return []
+        return []  # never reach here
 
     async def wait(
         self,
@@ -972,7 +972,10 @@ class HAIOClient:
                     raise Exception(
                         "All asked questions must have the same question template."
                     )
-                significance_level = execution_config.get("significance_level", 0.05)
+                significance_level = execution_config.get(
+                    "significance_level",
+                    _default_significance_level,
+                )
                 if not 0 <= significance_level <= 1:
                     raise Exception("Invalid significance level.")
                 question_template = asked_questions[0]["question_template"]
@@ -996,7 +999,10 @@ class HAIOClient:
                     raise Exception(
                         "All asked questions must have the same question template."
                     )
-                significance_level = execution_config.get("significance_level", 0.05)
+                significance_level = execution_config.get(
+                    "significance_level",
+                    _default_significance_level,
+                )
                 if not 0 <= significance_level <= 1:
                     raise Exception("Invalid significance level.")
                 question_template = asked_questions[0]["question_template"]
@@ -1020,7 +1026,10 @@ class HAIOClient:
                     raise Exception(
                         "All asked questions must have the same question template."
                     )
-                significance_level = execution_config.get("significance_level", 0.05)
+                significance_level = execution_config.get(
+                    "significance_level",
+                    _default_significance_level,
+                )
                 if not 0 <= significance_level <= 1:
                     raise Exception("Invalid significance level.")
                 sample_size = execution_config.get("sample_size", None)
@@ -1048,7 +1057,10 @@ class HAIOClient:
                     raise Exception(
                         "All asked questions must have the same question template."
                     )
-                significance_level = execution_config.get("significance_level", 0.05)
+                significance_level = execution_config.get(
+                    "significance_level",
+                    _default_significance_level,
+                )
                 if not 0 <= significance_level <= 1:
                     raise Exception("Invalid significance level.")
                 question_template = asked_questions[0]["question_template"]
@@ -1073,10 +1085,13 @@ class HAIOClient:
                     raise Exception(
                         "All asked questions must have the same question template."
                     )
-                significance_level = execution_config.get("significance_level", 0.05)
+                significance_level = execution_config.get(
+                    "significance_level",
+                    _default_significance_level,
+                )
                 if not 0 <= significance_level <= 1:
                     raise Exception("Invalid significance level.")
-                iteration = execution_config.get("iteration", 1000)
+                iteration = execution_config.get("iteration", _default_gta_iteration)
                 if not 0 < iteration:
                     raise Exception("Invalid iteration.")
 
