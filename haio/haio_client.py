@@ -1202,6 +1202,173 @@ class HAIOClient:
 
         return []  # never reach here
 
+    async def _sequential_gta_3_method(
+        self,
+        asked_questions: list[AskedQuestion],
+        quality_requirement: float,
+        significance_level: float = _default_significance_level,
+        iteration: int = _default_gta_iteration,
+    ) -> list[Answer]:
+        # prepare state
+        state_id: Final = (
+            haio_hash(asked_questions[0]["question_template"])
+            + ","
+            + str(quality_requirement)
+            + ","
+            + str(significance_level)
+        )
+        if state_id not in self._sequential_gta_3_method_state:
+            self._sequential_gta_3_method_state[state_id] = {
+                "task_number": 0,
+                "task_clusters_dict": {},
+                "answer_candidate_lists": {},
+                "task_phases": SortedDict(),
+                "question_template": asked_questions[0]["question_template"],
+                "data_lists": [],
+            }
+            for client in self.ai_clients.keys():
+                self._sequential_gta_3_method_state[state_id]["answer_candidate_lists"][
+                    client
+                ] = []
+            self._sequential_gta_3_method_state[state_id]["answer_candidate_lists"][
+                "human"
+            ] = []
+        state: Final = self._sequential_gta_3_method_state[state_id]
+
+        # Update state with additional questions
+        # make task clusters and record answers
+        for i, asked_question in enumerate(asked_questions):
+            for client in self.ai_clients.keys():
+                ai_answer = await self.ask_get_answer(
+                    question_template=asked_question["question_template"],
+                    data_list=asked_question["data_list"],
+                    client=client,
+                )
+                state["answer_candidate_lists"][client].append(ai_answer)
+
+                task_cluster_id = client + ai_answer
+                if task_cluster_id not in state["task_clusters_dict"]:
+                    state["task_clusters_dict"][task_cluster_id] = {
+                        "task_indexes": set(),
+                        "client": client,
+                        "approved": False,
+                        "correct_count": 0,
+                        "incorrect_count": 0,
+                    }
+                state["task_clusters_dict"][task_cluster_id]["task_indexes"].add(
+                    state["task_number"] + i
+                )
+            state["answer_candidate_lists"]["human"].append(None)
+        # update task_number
+        state["task_number"] += len(asked_questions)
+        # update asked_questions
+        state["data_lists"].extend(
+            [asked_question["data_list"] for asked_question in asked_questions]
+        )
+        # make task phase
+        state["task_phases"][
+            state["task_number"]
+        ] = (
+            set()
+        )  # task with index will be in task_phase_n if key_(n-1) <= index < key_n
+
+        # prepare
+        answer_list: Final[list[Answer | None]] = [None] * (state["task_number"])
+        task_clusters_dict: Final[dict[str, HAIOClient.TaskCluster]] = copy.deepcopy(
+            state["task_clusters_dict"]
+        )
+        task_phases: Final = copy.deepcopy(state["task_phases"])
+        incomplete_task_indexes: Final[list[int]] = list(range(state["task_number"]))
+
+        # start cta
+        while incomplete_task_indexes:
+            candidate_task_index = random.choice(incomplete_task_indexes)
+            task_phase_index = task_phases.keys()[
+                task_phases.bisect_right(candidate_task_index)
+            ]
+            task_phase = task_phases[task_phase_index]
+            task_index: int
+            human_answer: Answer
+            if task_phase:
+                # reuse
+                if candidate_task_index in task_phase:
+                    task_index = candidate_task_index
+                else:
+                    task_index = random.choice(list(task_phase))
+                task_phases[task_phase_index].remove(task_index)
+                human_answer = state["answer_candidate_lists"]["human"][task_index]
+            else:
+                # sample new
+                task_index = candidate_task_index
+                human_answer = await self.ask_get_answer(
+                    question_template=state["question_template"],
+                    data_list=state["data_lists"][task_index],
+                    client="human",
+                )
+                state["answer_candidate_lists"]["human"][task_index] = human_answer
+                state["data_lists"][task_index] = None
+                state["task_phases"][task_phase_index].add(task_index)
+
+            incomplete_task_indexes.remove(task_index)
+            answer_list[task_index] = human_answer
+
+            # update task clusters
+            for task_cluster in task_clusters_dict.values():
+                if (
+                    not task_cluster["approved"]
+                    and task_index in task_cluster["task_indexes"]
+                ):
+                    if (
+                        state["answer_candidate_lists"][task_cluster["client"]][
+                            task_index
+                        ]
+                        == human_answer
+                    ):
+                        task_cluster["correct_count"] += 1
+                    else:
+                        task_cluster["incorrect_count"] += 1
+
+                    # check task clusters
+                    # statistical test
+                    task_clusters: list[HAIOClient.TaskCluster] = [
+                        tc for tc in task_clusters_dict.values() if tc["approved"]
+                    ] + [task_cluster]
+                    beta_distributions_list: list[list[float]] = []
+                    for task_cluster in task_clusters:
+                        beta_distributions_list.append(
+                            beta.rvs(
+                                a=task_cluster["correct_count"] + 1,
+                                b=task_cluster["incorrect_count"] + 1,
+                                size=iteration,
+                            )
+                        )
+                    success_count: int = 0
+                    for j in range(iteration):
+                        numerator: float = 0
+                        denominator: int = 0
+                        for i, task_cluster in enumerate(task_clusters):
+                            numerator += beta_distributions_list[i][j] * len(
+                                task_cluster["task_indexes"]
+                            )
+                            denominator += len(task_cluster["task_indexes"])
+                        if numerator / denominator >= quality_requirement:
+                            success_count += 1
+
+                    # task cluster approval
+                    if 1 - success_count / iteration < significance_level:
+                        task_cluster["approved"] = True
+                        for inner_task_index in task_cluster["task_indexes"]:
+                            if answer_list[inner_task_index] == None:
+                                answer_list[inner_task_index] = state[
+                                    "answer_candidate_lists"
+                                ][task_cluster["client"]][inner_task_index]
+
+            # check if questions have been answered
+            if None not in answer_list[-len(asked_questions) :]:
+                return answer_list[-len(asked_questions) :]
+
+        return []  # never reach here
+
     async def wait(
         self,
         asked_questions: AskedQuestion | list[AskedQuestion],
@@ -1450,6 +1617,40 @@ class HAIOClient:
                     quality_requirement=quality_requirement,
                     significance_level=significance_level,
                     sample_size=sample_size,
+                    iteration=iteration,
+                )
+
+            elif execution_config["method"] == "sequential_gta_3":
+
+                quality_requirement = execution_config.get("quality_requirement", None)
+                if quality_requirement is None:
+                    raise Exception("Quality requirement is not set.")
+                if not 0 <= quality_requirement <= 1:
+                    raise Exception("Invalid quality requirement.")
+                if not self._check_same_question_template(asked_questions):
+                    raise Exception(
+                        "All asked questions must have the same question template."
+                    )
+                significance_level = execution_config.get(
+                    "significance_level",
+                    self._default_significance_level,
+                )
+                if not 0 <= significance_level <= 1:
+                    raise Exception("Invalid significance level.")
+                iteration = execution_config.get(
+                    "iteration", self._default_gta_iteration
+                )
+                if not 0 < iteration:
+                    raise Exception("Invalid iteration.")
+
+                question_template = asked_questions[0]["question_template"]
+                if question_template["answer"]["type"] != "select":
+                    raise Exception("The answer type must be select.")
+
+                return await self._sequential_gta_3_method(
+                    asked_questions=asked_questions,
+                    quality_requirement=quality_requirement,
+                    significance_level=significance_level,
                     iteration=iteration,
                 )
             else:
