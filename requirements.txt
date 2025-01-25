@@ -1,3 +1,5 @@
+-e .
+
 # build
 twine
 build
@@ -6,10 +8,10 @@ build
 pip-autoremove
 
 # debug
-icecream
 pyperclip
 
 # main
+icecream
 asyncio
 beautifulsoup4
 boto3
