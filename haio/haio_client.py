@@ -402,6 +402,34 @@ class HAIOClient:
     _default_significance_level: float = 0.05
     _default_gta_iteration: int = 1000
 
+    def _gta_statistical_test(
+        self,
+        task_clusters: list[TaskCluster],
+        iteration: int,
+        quality_requirement: float,
+    ) -> float:
+        beta_distributions_list: list[list[float]] = []
+        for task_cluster in task_clusters:
+            beta_distributions_list.append(
+                beta.rvs(
+                    a=task_cluster["correct_count"] + 1,
+                    b=task_cluster["incorrect_count"] + 1,
+                    size=iteration,
+                )
+            )
+        success_count: int = 0
+        for j in range(iteration):
+            numerator: float = 0
+            denominator: int = 0
+            for i, task_cluster in enumerate(task_clusters):
+                numerator += beta_distributions_list[i][j] * len(
+                    task_cluster["task_indexes"]
+                )
+                denominator += len(task_cluster["task_indexes"])
+            if numerator / denominator >= quality_requirement:
+                success_count += 1
+        return 1 - success_count / iteration
+
     async def _cta_method(
         self,
         asked_questions: list[AskedQuestion],
@@ -548,31 +576,14 @@ class HAIOClient:
             # check task clusters
             for index, unapproved_task_cluster in enumerate(unapproved_task_clusters):
                 # statistical test
-                beta_distributions_list: list[list[float]] = []
-                for task_cluster in approved_task_clusters + [unapproved_task_cluster]:
-                    beta_distributions_list.append(
-                        beta.rvs(
-                            a=task_cluster["correct_count"] + 1,
-                            b=task_cluster["incorrect_count"] + 1,
-                            size=iteration,
-                        )
-                    )
-                success_count: int = 0
-                for j in range(iteration):
-                    numerator: float = 0
-                    denominator: int = 0
-                    for i, task_cluster in enumerate(
-                        approved_task_clusters + [unapproved_task_cluster]
-                    ):
-                        numerator += beta_distributions_list[i][j] * len(
-                            task_cluster["task_indexes"]
-                        )
-                        denominator += len(task_cluster["task_indexes"])
-                    if numerator / denominator >= quality_requirement:
-                        success_count += 1
+                p_value = self._gta_statistical_test(
+                    task_clusters=approved_task_clusters + [unapproved_task_cluster],
+                    iteration=iteration,
+                    quality_requirement=quality_requirement,
+                )
 
                 # task cluster approval
-                if 1 - success_count / iteration < significance_level:
+                if p_value < significance_level:
                     approved_task_clusters.append(unapproved_task_cluster)
                     unapproved_task_clusters.pop(index)
                     for task_index in unapproved_task_cluster["task_indexes"]:
@@ -773,34 +784,19 @@ class HAIOClient:
 
                         # check task clusters
                         # statistical test
-                        task_clusters: list[HAIOClient.TaskCluster] = [
-                            tc
-                            for tc in state["task_clusters_dict"].values()
-                            if tc["approved"]
-                        ] + [task_cluster]
-                        beta_distributions_list: list[list[float]] = []
-                        for task_cluster in task_clusters:
-                            beta_distributions_list.append(
-                                beta.rvs(
-                                    a=task_cluster["correct_count"] + 1,
-                                    b=task_cluster["incorrect_count"] + 1,
-                                    size=iteration,
-                                )
-                            )
-                        success_count: int = 0
-                        for j in range(iteration):
-                            numerator: float = 0
-                            denominator: int = 0
-                            for i, task_cluster in enumerate(task_clusters):
-                                numerator += beta_distributions_list[i][j] * len(
-                                    task_cluster["task_indexes"]
-                                )
-                                denominator += len(task_cluster["task_indexes"])
-                            if numerator / denominator >= quality_requirement:
-                                success_count += 1
+                        p_value = self._gta_statistical_test(
+                            task_clusters=[
+                                tc
+                                for tc in state["task_clusters_dict"].values()
+                                if tc["approved"]
+                            ]
+                            + [task_cluster],
+                            iteration=iteration,
+                            quality_requirement=quality_requirement,
+                        )
 
                         # task cluster approval
-                        if 1 - success_count / iteration < significance_level:
+                        if p_value < significance_level:
                             task_cluster["approved"] = True
                             for inner_task_index in task_cluster["task_indexes"]:
                                 if answer_list[inner_task_index] == None:
@@ -1021,33 +1017,18 @@ class HAIOClient:
                             >= sample_size
                         ):
                             # statistical test
-                            task_clusters: list[HAIOClient.TaskCluster] = [
-                                tc
-                                for tc in state["task_clusters_dict"].values()
-                                if tc["approved"]
-                            ] + [task_cluster]
-                            beta_distributions_list: list[list[float]] = []
-                            for task_cluster in task_clusters:
-                                beta_distributions_list.append(
-                                    beta.rvs(
-                                        a=task_cluster["correct_count"] + 1,
-                                        b=task_cluster["incorrect_count"] + 1,
-                                        size=iteration,
-                                    )
-                                )
-                            success_count: int = 0
-                            for j in range(iteration):
-                                numerator: float = 0
-                                denominator: int = 0
-                                for i, task_cluster in enumerate(task_clusters):
-                                    numerator += beta_distributions_list[i][j] * len(
-                                        task_cluster["task_indexes"]
-                                    )
-                                    denominator += len(task_cluster["task_indexes"])
-                                if numerator / denominator >= quality_requirement:
-                                    success_count += 1
+                            p_value = self._gta_statistical_test(
+                                task_clusters=[
+                                    tc
+                                    for tc in state["task_clusters_dict"].values()
+                                    if tc["approved"]
+                                ]
+                                + [task_cluster],
+                                iteration=iteration,
+                                quality_requirement=quality_requirement,
+                            )
 
-                            if 1 - success_count / iteration < significance_level:
+                            if p_value < significance_level:
                                 task_cluster["approved"] = True
                             task_cluster["checked"] = True
 
@@ -1330,32 +1311,17 @@ class HAIOClient:
 
                     # check task clusters
                     # statistical test
-                    task_clusters: list[HAIOClient.TaskCluster] = [
-                        tc for tc in task_clusters_dict.values() if tc["approved"]
-                    ] + [task_cluster]
-                    beta_distributions_list: list[list[float]] = []
-                    for task_cluster in task_clusters:
-                        beta_distributions_list.append(
-                            beta.rvs(
-                                a=task_cluster["correct_count"] + 1,
-                                b=task_cluster["incorrect_count"] + 1,
-                                size=iteration,
-                            )
-                        )
-                    success_count: int = 0
-                    for j in range(iteration):
-                        numerator: float = 0
-                        denominator: int = 0
-                        for i, task_cluster in enumerate(task_clusters):
-                            numerator += beta_distributions_list[i][j] * len(
-                                task_cluster["task_indexes"]
-                            )
-                            denominator += len(task_cluster["task_indexes"])
-                        if numerator / denominator >= quality_requirement:
-                            success_count += 1
+                    p_value = self._gta_statistical_test(
+                        task_clusters=[
+                            tc for tc in task_clusters_dict.values() if tc["approved"]
+                        ]
+                        + [task_cluster],
+                        iteration=iteration,
+                        quality_requirement=quality_requirement,
+                    )
 
                     # task cluster approval
-                    if 1 - success_count / iteration < significance_level:
+                    if p_value < significance_level:
                         task_cluster["approved"] = True
                         for inner_task_index in task_cluster["task_indexes"]:
                             if answer_list[inner_task_index] == None:
