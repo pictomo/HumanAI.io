@@ -83,6 +83,10 @@ async def main() -> None:
                 "method": "sequential_cta_3",
                 "quality_requirement": 0.9,
             }
+            execution_config = {
+                "method": "sequential_gta_1",
+                "quality_requirement": 0.9,
+            }
 
             answer_list = await haio_client.wait(
                 asked_questions=asked_questions,
