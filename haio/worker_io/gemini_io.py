@@ -29,9 +29,10 @@ class Gemini_IO(Worker_IO):
         # システムメッセージの初期化
         system_message: str = textwrap.dedent(
             """\
-            Respond to questions in Markdown format in the same way as a crowdsourcing worker would, providing accurate and concise answers according to the answer format below.
-            Write only the answer and no explanation, semicolon, etc. is needed.
-            You do not need to rely on crowdworkers for the accuracy of your answers, so please provide answers of the highest possible standard.
+            You will be given the same questions given to humans.
+            Questions are in Markdown format.
+            Answer accurately and concisely, following the answer format below.
+            Only write your answer; no explanations, semicolons, etc. are needed.
             answer format: """
         )
 
