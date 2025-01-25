@@ -1,4 +1,3 @@
-from dotenv import load_dotenv
 from icecream import ic
 from scipy.stats import binomtest, beta
 from sortedcontainers import SortedDict
@@ -105,10 +104,25 @@ class HAIOClient:
 
         self.used_cache: dict[str, dict[str, set[str]]] = {}
 
-        # _sequential_cta_1_method state
-        self._sequential_cta_1_method_state: dict[str, HAIOClient.MethodState] = {}
-        self._sequential_cta_2_method_state: dict[str, HAIOClient.MethodState] = {}
-        self._sequential_cta_3_method_state: dict[str, HAIOClient.MethodState] = {}
+        # _sequential_cta_method state
+        self._sequential_cta_1_method_state: Final[
+            dict[str, HAIOClient.MethodState]
+        ] = {}
+        self._sequential_cta_2_method_state: Final[
+            dict[str, HAIOClient.MethodState]
+        ] = {}
+        self._sequential_cta_3_method_state: Final[
+            dict[str, HAIOClient.MethodState]
+        ] = {}
+        self._sequential_gta_1_method_state: Final[
+            dict[str, HAIOClient.MethodState]
+        ] = {}
+        self._sequential_gta_2_method_state: Final[
+            dict[str, HAIOClient.MethodState]
+        ] = {}
+        self._sequential_gta_3_method_state: Final[
+            dict[str, HAIOClient.MethodState]
+        ] = {}
 
     @overload
     def _get_cache_dir_path(self, ensure_exist: Literal[True] = True) -> str: ...
@@ -395,8 +409,8 @@ class HAIOClient:
         significance_level: float = _default_significance_level,
     ) -> list[Answer]:
         # prepare
-        answer_list: list[Answer | None] = [None] * len(asked_questions)
-        answer_candidate_lists: dict[ClientType, list[Answer | None]] = {
+        answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
+        answer_candidate_lists: Final[dict[ClientType, list[Answer | None]]] = {
             "human": [None] * len(asked_questions)
         }
         for client in self.ai_clients.keys():
@@ -482,10 +496,10 @@ class HAIOClient:
         significance_level: float = _default_significance_level,
         iteration: int = _default_gta_iteration,
     ) -> list[Answer]:
-        answer_list: list[Answer | None] = [None] * len(asked_questions)
-        ground_truth_list: list[Answer | None] = [None] * len(asked_questions)
+        answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
+        ground_truth_list: Final[list[Answer | None]] = [None] * len(asked_questions)
         unapproved_task_clusters: list[HAIOClient.TaskCluster]
-        approved_task_clusters: list[HAIOClient.TaskCluster] = list()
+        approved_task_clusters: Final[list[HAIOClient.TaskCluster]] = list()
 
         # make task clusters
         unapproved_task_clusters_dict: dict[Answer, HAIOClient.TaskCluster] = {}
@@ -593,7 +607,7 @@ class HAIOClient:
                 ] = []
         state: Final = self._sequential_cta_1_method_state[state_id]
 
-        answer_list: list[Answer | None] = [None] * len(asked_questions)
+        answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
 
         # get each question answer
         for task_index, asked_question in enumerate(asked_questions):
@@ -684,19 +698,19 @@ class HAIOClient:
             + ","
             + str(significance_level)
         )
-        if state_id not in self._sequential_cta_1_method_state:
-            self._sequential_cta_1_method_state[state_id] = {
+        if state_id not in self._sequential_gta_1_method_state:
+            self._sequential_gta_1_method_state[state_id] = {
                 "task_number": 0,
                 "task_clusters_dict": {},
                 "answer_candidate_lists": {},
             }
             for client in self.ai_clients.keys():
-                self._sequential_cta_1_method_state[state_id]["answer_candidate_lists"][
+                self._sequential_gta_1_method_state[state_id]["answer_candidate_lists"][
                     client
                 ] = []
-        state: Final = self._sequential_cta_1_method_state[state_id]
+        state: Final = self._sequential_gta_1_method_state[state_id]
 
-        answer_list: list[Answer | None] = [None] * len(asked_questions)
+        answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
 
         # get each question answer
         for task_index, asked_question in enumerate(asked_questions):
@@ -827,7 +841,7 @@ class HAIOClient:
                 ] = []
         state: Final = self._sequential_cta_2_method_state[state_id]
 
-        answer_list: list[Answer | None] = [None] * len(asked_questions)
+        answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
 
         # get each question answer
         for tesk_index, asked_question in enumerate(asked_questions):
@@ -902,6 +916,138 @@ class HAIOClient:
                                 alternative="greater",
                             )
                             if binomtest_result.pvalue < significance_level:
+                                task_cluster["approved"] = True
+                            task_cluster["checked"] = True
+
+        state["task_number"] += len(asked_questions)
+
+        return answer_list
+
+    async def _sequential_gta_2_method(
+        self,
+        asked_questions: list[AskedQuestion],
+        quality_requirement: float,
+        sample_size: int,
+        significance_level: float = _default_significance_level,
+        iteration: int = _default_gta_iteration,
+    ) -> list[Answer]:
+        # prepare
+        state_id = (
+            haio_hash(asked_questions[0]["question_template"])
+            + ","
+            + str(quality_requirement)
+            + ","
+            + str(significance_level)
+            + ","
+            + str(sample_size)
+        )
+        if state_id not in self._sequential_gta_2_method_state:
+            self._sequential_gta_2_method_state[state_id] = {
+                "task_number": 0,
+                "task_clusters_dict": {},
+                "answer_candidate_lists": {},
+            }
+            for client in self.ai_clients.keys():
+                self._sequential_gta_2_method_state[state_id]["answer_candidate_lists"][
+                    client
+                ] = []
+        state: Final = self._sequential_gta_2_method_state[state_id]
+
+        answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
+
+        # get each question answer
+        for tesk_index, asked_question in enumerate(asked_questions):
+
+            # get answer from each AI and make task clusters
+            for client in self.ai_clients.keys():
+                ai_answer = await self.ask_get_answer(
+                    question_template=asked_question["question_template"],
+                    data_list=asked_question["data_list"],
+                    client=client,
+                )
+                state["answer_candidate_lists"][client].append(ai_answer)
+
+                task_cluster_id = client + ai_answer
+                if task_cluster_id not in state["task_clusters_dict"]:
+                    state["task_clusters_dict"][task_cluster_id] = {
+                        "task_indexes": set(),
+                        "client": client,
+                        "approved": False,
+                        "checked": False,
+                        "correct_count": 0,
+                        "incorrect_count": 0,
+                    }
+
+                # if task_cluster has approved already, apply the answer
+                if (
+                    state["task_clusters_dict"][task_cluster_id]["approved"]
+                    and answer_list[tesk_index] == None
+                ):
+                    answer_list[tesk_index] = ai_answer
+                else:
+                    state["task_clusters_dict"][task_cluster_id]["task_indexes"].add(
+                        state["task_number"] + tesk_index
+                    )
+
+            # ask human
+            if answer_list[tesk_index] == None:
+                human_answer = await self.ask_get_answer(
+                    question_template=asked_question["question_template"],
+                    data_list=asked_question["data_list"],
+                    client="human",
+                )
+                answer_list[tesk_index] = human_answer
+
+                # update task clusters
+                for task_cluster in state["task_clusters_dict"].values():
+                    if not task_cluster["checked"] and (
+                        (state["task_number"] + tesk_index)
+                        in task_cluster["task_indexes"]
+                    ):
+                        if (
+                            state["answer_candidate_lists"][task_cluster["client"]][
+                                state["task_number"] + tesk_index
+                            ]
+                            == human_answer
+                        ):
+                            task_cluster["correct_count"] += 1
+                        else:
+                            task_cluster["incorrect_count"] += 1
+
+                        # approve task clusters
+                        if (
+                            task_cluster["correct_count"]
+                            + task_cluster["incorrect_count"]
+                            >= sample_size
+                        ):
+                            # statistical test
+                            task_clusters: list[HAIOClient.TaskCluster] = [
+                                tc
+                                for tc in state["task_clusters_dict"].values()
+                                if tc["approved"]
+                            ] + [task_cluster]
+                            beta_distributions_list: list[list[float]] = []
+                            for task_cluster in task_clusters:
+                                beta_distributions_list.append(
+                                    beta.rvs(
+                                        a=task_cluster["correct_count"] + 1,
+                                        b=task_cluster["incorrect_count"] + 1,
+                                        size=iteration,
+                                    )
+                                )
+                            success_count: int = 0
+                            for j in range(iteration):
+                                numerator: float = 0
+                                denominator: int = 0
+                                for i, task_cluster in enumerate(task_clusters):
+                                    numerator += beta_distributions_list[i][j] * len(
+                                        task_cluster["task_indexes"]
+                                    )
+                                    denominator += len(task_cluster["task_indexes"])
+                                if numerator / denominator >= quality_requirement:
+                                    success_count += 1
+
+                            if 1 - success_count / iteration < significance_level:
                                 task_cluster["approved"] = True
                             task_cluster["checked"] = True
 
@@ -1266,6 +1412,44 @@ class HAIOClient:
                     asked_questions=asked_questions,
                     quality_requirement=quality_requirement,
                     significance_level=significance_level,
+                    iteration=iteration,
+                )
+
+            elif execution_config["method"] == "sequential_gta_2":
+
+                quality_requirement = execution_config.get("quality_requirement", None)
+                if quality_requirement is None:
+                    raise Exception("Quality requirement is not set.")
+                if not 0 <= quality_requirement <= 1:
+                    raise Exception("Invalid quality requirement.")
+                if not self._check_same_question_template(asked_questions):
+                    raise Exception(
+                        "All asked questions must have the same question template."
+                    )
+                significance_level = execution_config.get(
+                    "significance_level",
+                    self._default_significance_level,
+                )
+                if not 0 <= significance_level <= 1:
+                    raise Exception("Invalid significance level.")
+                sample_size = execution_config.get("sample_size", None)
+                if sample_size is None or not 0 < sample_size:
+                    raise Exception("Sample size is not set.")
+                iteration = execution_config.get(
+                    "iteration", self._default_gta_iteration
+                )
+                if not 0 < iteration:
+                    raise Exception("Invalid iteration.")
+
+                question_template = asked_questions[0]["question_template"]
+                if question_template["answer"]["type"] != "select":
+                    raise Exception("The answer type must be select.")
+
+                return await self._sequential_gta_2_method(
+                    asked_questions=asked_questions,
+                    quality_requirement=quality_requirement,
+                    significance_level=significance_level,
+                    sample_size=sample_size,
                     iteration=iteration,
                 )
             else:
