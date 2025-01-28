@@ -649,12 +649,19 @@ class HAIOClient:
                 ] = []
         state: Final = self._sequential_cta_1_method_state[state_id]
 
+        for answer_candidate_list in state["answer_candidate_lists"].values():
+            answer_candidate_list += [None] * len(asked_questions)
+
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
         client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
         add_human_assign: int = 0
 
+        # randomize the order of the tasks
+        indexed_asked_questions = list(enumerate(asked_questions))
+        random.shuffle(indexed_asked_questions)
+
         # get each question answer
-        for task_index, asked_question in enumerate(asked_questions):
+        for task_index, asked_question in indexed_asked_questions:
 
             # get answer from each AI and make task clusters
             for client in self.ai_clients.keys():
@@ -663,7 +670,9 @@ class HAIOClient:
                     data_list=asked_question["data_list"],
                     client=client,
                 )
-                state["answer_candidate_lists"][client].append(ai_answer)
+                state["answer_candidate_lists"][client][
+                    state["task_number"] + task_index
+                ] = ai_answer
 
                 task_cluster_id = client + ai_answer
                 if task_cluster_id not in state["task_clusters_dict"]:
@@ -761,12 +770,19 @@ class HAIOClient:
                 ] = []
         state: Final = self._sequential_gta_1_method_state[state_id]
 
+        for answer_candidate_list in state["answer_candidate_lists"].values():
+            answer_candidate_list += [None] * len(asked_questions)
+
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
         client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
         add_human_assign: int = 0
 
+        # randomize the order of the tasks
+        indexed_asked_questions = list(enumerate(asked_questions))
+        random.shuffle(indexed_asked_questions)
+
         # get each question answer
-        for task_index, asked_question in enumerate(asked_questions):
+        for task_index, asked_question in indexed_asked_questions:
 
             # get answer from each AI and make task clusters
             for client in self.ai_clients.keys():
@@ -775,7 +791,9 @@ class HAIOClient:
                     data_list=asked_question["data_list"],
                     client=client,
                 )
-                state["answer_candidate_lists"][client].append(ai_answer)
+                state["answer_candidate_lists"][client][
+                    state["task_number"] + task_index
+                ] = ai_answer
 
                 task_cluster_id = client + ai_answer
                 if task_cluster_id not in state["task_clusters_dict"]:
@@ -881,12 +899,19 @@ class HAIOClient:
                 ] = []
         state: Final = self._sequential_cta_2_method_state[state_id]
 
+        for answer_candidate_list in state["answer_candidate_lists"].values():
+            answer_candidate_list += [None] * len(asked_questions)
+
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
         client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
         add_human_assign: int = 0
 
+        # randomize the order of the tasks
+        indexed_asked_questions = list(enumerate(asked_questions))
+        random.shuffle(indexed_asked_questions)
+
         # get each question answer
-        for tesk_index, asked_question in enumerate(asked_questions):
+        for tesk_index, asked_question in indexed_asked_questions:
 
             # get answer from each AI and make task clusters
             for client in self.ai_clients.keys():
@@ -895,7 +920,9 @@ class HAIOClient:
                     data_list=asked_question["data_list"],
                     client=client,
                 )
-                state["answer_candidate_lists"][client].append(ai_answer)
+                state["answer_candidate_lists"][client][
+                    state["task_number"] + tesk_index
+                ] = ai_answer
 
                 task_cluster_id = client + ai_answer
                 if task_cluster_id not in state["task_clusters_dict"]:
@@ -1002,12 +1029,19 @@ class HAIOClient:
                 ] = []
         state: Final = self._sequential_gta_2_method_state[state_id]
 
+        for answer_candidate_list in state["answer_candidate_lists"].values():
+            answer_candidate_list += [None] * len(asked_questions)
+
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
         client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
         add_human_assign: int = 0
 
+        # randomize the order of the tasks
+        indexed_asked_questions = list(enumerate(asked_questions))
+        random.shuffle(indexed_asked_questions)
+
         # get each question answer
-        for tesk_index, asked_question in enumerate(asked_questions):
+        for tesk_index, asked_question in indexed_asked_questions:
 
             # get answer from each AI and make task clusters
             for client in self.ai_clients.keys():
@@ -1016,7 +1050,9 @@ class HAIOClient:
                     data_list=asked_question["data_list"],
                     client=client,
                 )
-                state["answer_candidate_lists"][client].append(ai_answer)
+                state["answer_candidate_lists"][client][
+                    state["task_number"] + tesk_index
+                ] = ai_answer
 
                 task_cluster_id = client + ai_answer
                 if task_cluster_id not in state["task_clusters_dict"]:
