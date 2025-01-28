@@ -491,7 +491,7 @@ class HAIOClient:
         random.shuffle(indexed_asked_questions)
 
         # sampling and approval
-        for task_index, asked_question in enumerate(asked_questions):
+        for task_index, asked_question in indexed_asked_questions:
             if answer_list[task_index] != None:
                 continue
 
