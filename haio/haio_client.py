@@ -361,6 +361,8 @@ class HAIOClient:
         answer = await self._get_answer(requested_question)
         return answer
 
+    # ask
+
     def ask(
         self, question_template: QuestionTemplate, data_list: DataList
     ) -> AskedQuestion:
@@ -378,9 +380,14 @@ class HAIOClient:
 
     # execution methods
 
+    class MethodReturn(TypedDict):
+        answer_list: list[Answer]
+        client_list: list[ClientType]
+        add_human_assign: int
+
     async def _simple_method(
         self, asked_questions: list[AskedQuestion], execution_config: dict
-    ) -> list[Answer]:
+    ) -> MethodReturn:
         answer_list: list[Answer | None] = []
         requested_questions: list[HAIOClient.RequestedQuestion] = []
 
@@ -397,7 +404,13 @@ class HAIOClient:
             answer = await self._get_answer(requested_question)
             answer_list[i] = answer
 
-        return answer_list
+        return {
+            "answer_list": answer_list,
+            "client_list": [execution_config["client"]] * len(asked_questions),
+            "add_human_assign": (
+                len(asked_questions) if execution_config["client"] == "human" else 0
+            ),
+        }
 
     _default_significance_level: float = 0.05
     _default_gta_iteration: int = 1000
@@ -435,9 +448,11 @@ class HAIOClient:
         asked_questions: list[AskedQuestion],
         quality_requirement: float,
         significance_level: float = _default_significance_level,
-    ) -> list[Answer]:
+    ) -> MethodReturn:
         # prepare
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
+        client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
+        add_human_assign: int = 0
         answer_candidate_lists: Final[dict[ClientType, list[Answer | None]]] = {
             "human": [None] * len(asked_questions)
         }
@@ -487,6 +502,8 @@ class HAIOClient:
                 client="human",
             )
             answer_list[task_index] = human_answer
+            client_list[task_index] = "human"
+            add_human_assign += 1
             answer_candidate_lists["human"][task_index] = human_answer
             for task_cluster in task_clusters:
                 if (
@@ -515,7 +532,12 @@ class HAIOClient:
                                 answer_list[inner_task_index] = answer_candidate_lists[
                                     task_cluster["client"]
                                 ][inner_task_index]
-        return answer_list
+                                client_list[inner_task_index] = task_cluster["client"]
+        return {
+            "answer_list": answer_list,
+            "client_list": client_list,
+            "add_human_assign": add_human_assign,
+        }
 
     async def _gta_method(
         self,
@@ -523,8 +545,10 @@ class HAIOClient:
         quality_requirement: float,
         significance_level: float = _default_significance_level,
         iteration: int = _default_gta_iteration,
-    ) -> list[Answer]:
+    ) -> MethodReturn:
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
+        client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
+        add_human_assign: int = 0
         ground_truth_list: Final[list[Answer | None]] = [None] * len(asked_questions)
         unapproved_task_clusters: list[HAIOClient.TaskCluster]
         approved_task_clusters: Final[list[HAIOClient.TaskCluster]] = list()
@@ -566,6 +590,8 @@ class HAIOClient:
             )
             ground_truth_list[i] = human_answer
             answer_list[i] = human_answer
+            client_list[i] = "human"
+            add_human_assign += 1
             for task_cluster in unapproved_task_clusters + approved_task_clusters:
                 if i in task_cluster["task_indexes"]:
                     if task_cluster["answer"] == human_answer:
@@ -589,15 +615,20 @@ class HAIOClient:
                     for task_index in unapproved_task_cluster["task_indexes"]:
                         if answer_list[task_index] == None:
                             answer_list[task_index] = unapproved_task_cluster["answer"]
+                            client_list[task_index] = unapproved_task_cluster["client"]
 
-        return answer_list
+        return {
+            "answer_list": answer_list,
+            "client_list": client_list,
+            "add_human_assign": add_human_assign,
+        }
 
     async def _sequential_cta_1_method(
         self,
         asked_questions: list[AskedQuestion],
         quality_requirement: float,
         significance_level: float = _default_significance_level,
-    ) -> list[Answer]:
+    ) -> MethodReturn:
         # prepare
         state_id = (
             haio_hash(asked_questions[0]["question_template"])
@@ -619,6 +650,8 @@ class HAIOClient:
         state: Final = self._sequential_cta_1_method_state[state_id]
 
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
+        client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
+        add_human_assign: int = 0
 
         # get each question answer
         for task_index, asked_question in enumerate(asked_questions):
@@ -648,6 +681,7 @@ class HAIOClient:
                     and answer_list[task_index] == None
                 ):
                     answer_list[task_index] = ai_answer
+                    client_list[task_index] = client
                 else:
                     state["task_clusters_dict"][task_cluster_id]["task_indexes"].add(
                         state["task_number"] + task_index
@@ -661,6 +695,8 @@ class HAIOClient:
                     client="human",
                 )
                 answer_list[task_index] = human_answer
+                client_list[task_index] = "human"
+                add_human_assign += 1
 
                 # update and approve task clusters
                 for task_cluster in state["task_clusters_dict"].values():
@@ -692,7 +728,11 @@ class HAIOClient:
 
         state["task_number"] += len(asked_questions)
 
-        return answer_list
+        return {
+            "answer_list": answer_list,
+            "client_list": client_list,
+            "add_human_assign": add_human_assign,
+        }
 
     async def _sequential_gta_1_method(
         self,
@@ -700,7 +740,7 @@ class HAIOClient:
         quality_requirement: float,
         significance_level: float = _default_significance_level,
         iteration: int = _default_gta_iteration,
-    ) -> list[Answer]:
+    ) -> MethodReturn:
         # prepare
         state_id = (
             haio_hash(asked_questions[0]["question_template"])
@@ -722,6 +762,8 @@ class HAIOClient:
         state: Final = self._sequential_gta_1_method_state[state_id]
 
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
+        client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
+        add_human_assign: int = 0
 
         # get each question answer
         for task_index, asked_question in enumerate(asked_questions):
@@ -751,6 +793,7 @@ class HAIOClient:
                     and answer_list[task_index] == None
                 ):
                     answer_list[task_index] = ai_answer
+                    client_list[task_index] = client
                 else:
                     state["task_clusters_dict"][task_cluster_id]["task_indexes"].add(
                         state["task_number"] + task_index
@@ -764,6 +807,8 @@ class HAIOClient:
                     client="human",
                 )
                 answer_list[task_index] = human_answer
+                client_list[task_index] = "human"
+                add_human_assign += 1
 
                 # update and approve task clusters
                 for task_cluster in state["task_clusters_dict"].values():
@@ -798,15 +843,14 @@ class HAIOClient:
                         # task cluster approval
                         if p_value < significance_level:
                             task_cluster["approved"] = True
-                            for inner_task_index in task_cluster["task_indexes"]:
-                                if answer_list[inner_task_index] == None:
-                                    answer_list[inner_task_index] = state[
-                                        "answer_candidate_lists"
-                                    ][task_cluster["client"]][inner_task_index]
 
         state["task_number"] += len(asked_questions)
 
-        return answer_list
+        return {
+            "answer_list": answer_list,
+            "client_list": client_list,
+            "add_human_assign": add_human_assign,
+        }
 
     async def _sequential_cta_2_method(
         self,
@@ -814,7 +858,7 @@ class HAIOClient:
         quality_requirement: float,
         sample_size: int,
         significance_level: float = _default_significance_level,
-    ) -> list[Answer]:
+    ) -> MethodReturn:
         # prepare
         state_id = (
             haio_hash(asked_questions[0]["question_template"])
@@ -838,6 +882,8 @@ class HAIOClient:
         state: Final = self._sequential_cta_2_method_state[state_id]
 
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
+        client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
+        add_human_assign: int = 0
 
         # get each question answer
         for tesk_index, asked_question in enumerate(asked_questions):
@@ -868,6 +914,7 @@ class HAIOClient:
                     and answer_list[tesk_index] == None
                 ):
                     answer_list[tesk_index] = ai_answer
+                    client_list[tesk_index] = client
                 else:
                     state["task_clusters_dict"][task_cluster_id]["task_indexes"].add(
                         state["task_number"] + tesk_index
@@ -881,6 +928,8 @@ class HAIOClient:
                     client="human",
                 )
                 answer_list[tesk_index] = human_answer
+                client_list[tesk_index] = "human"
+                add_human_assign += 1
 
                 # update task clusters
                 for task_cluster in state["task_clusters_dict"].values():
@@ -917,7 +966,11 @@ class HAIOClient:
 
         state["task_number"] += len(asked_questions)
 
-        return answer_list
+        return {
+            "answer_list": answer_list,
+            "client_list": client_list,
+            "add_human_assign": add_human_assign,
+        }
 
     async def _sequential_gta_2_method(
         self,
@@ -926,7 +979,7 @@ class HAIOClient:
         sample_size: int,
         significance_level: float = _default_significance_level,
         iteration: int = _default_gta_iteration,
-    ) -> list[Answer]:
+    ) -> MethodReturn:
         # prepare
         state_id = (
             haio_hash(asked_questions[0]["question_template"])
@@ -950,6 +1003,8 @@ class HAIOClient:
         state: Final = self._sequential_gta_2_method_state[state_id]
 
         answer_list: Final[list[Answer | None]] = [None] * len(asked_questions)
+        client_list: Final[list[ClientType | None]] = [None] * len(asked_questions)
+        add_human_assign: int = 0
 
         # get each question answer
         for tesk_index, asked_question in enumerate(asked_questions):
@@ -980,6 +1035,7 @@ class HAIOClient:
                     and answer_list[tesk_index] == None
                 ):
                     answer_list[tesk_index] = ai_answer
+                    client_list[tesk_index] = client
                 else:
                     state["task_clusters_dict"][task_cluster_id]["task_indexes"].add(
                         state["task_number"] + tesk_index
@@ -993,6 +1049,8 @@ class HAIOClient:
                     client="human",
                 )
                 answer_list[tesk_index] = human_answer
+                client_list[tesk_index] = "human"
+                add_human_assign += 1
 
                 # update task clusters
                 for task_cluster in state["task_clusters_dict"].values():
@@ -1034,14 +1092,18 @@ class HAIOClient:
 
         state["task_number"] += len(asked_questions)
 
-        return answer_list
+        return {
+            "answer_list": answer_list,
+            "client_list": client_list,
+            "add_human_assign": add_human_assign,
+        }
 
     async def _sequential_cta_3_method(
         self,
         asked_questions: list[AskedQuestion],
         quality_requirement: float,
         significance_level: float = _default_significance_level,
-    ) -> list[Answer]:
+    ) -> MethodReturn:
         # prepare state
         state_id: Final = (
             haio_hash(asked_questions[0]["question_template"])
@@ -1107,6 +1169,8 @@ class HAIOClient:
 
         # prepare
         answer_list: Final[list[Answer | None]] = [None] * (state["task_number"])
+        client_list: Final[list[ClientType | None]] = [None] * (state["task_number"])
+        add_human_assign: int = 0
         task_clusters_dict: Final[dict[str, HAIOClient.TaskCluster]] = copy.deepcopy(
             state["task_clusters_dict"]
         )
@@ -1138,12 +1202,14 @@ class HAIOClient:
                     data_list=state["data_lists"][task_index],
                     client="human",
                 )
+                add_human_assign += 1
                 state["answer_candidate_lists"]["human"][task_index] = human_answer
                 state["data_lists"][task_index] = None
                 state["task_phases"][task_phase_index].add(task_index)
 
             incomplete_task_indexes.remove(task_index)
             answer_list[task_index] = human_answer
+            client_list[task_index] = "human"
 
             # update task clusters
             for task_cluster in task_clusters_dict.values():
@@ -1176,12 +1242,21 @@ class HAIOClient:
                                 answer_list[inner_task_index] = state[
                                     "answer_candidate_lists"
                                 ][task_cluster["client"]][inner_task_index]
+                                client_list[inner_task_index] = task_cluster["client"]
 
             # check if questions have been answered
             if None not in answer_list[-len(asked_questions) :]:
-                return answer_list[-len(asked_questions) :]
+                return {
+                    "answer_list": answer_list[-len(asked_questions) :],
+                    "client_list": client_list[-len(asked_questions) :],
+                    "add_human_assign": add_human_assign,
+                }
 
-        return []  # never reach here
+        return {
+            "answer_list": [],
+            "client_list": [],
+            "add_human_assign": 0,
+        }  # never reach here
 
     async def _sequential_gta_3_method(
         self,
@@ -1189,7 +1264,7 @@ class HAIOClient:
         quality_requirement: float,
         significance_level: float = _default_significance_level,
         iteration: int = _default_gta_iteration,
-    ) -> list[Answer]:
+    ) -> MethodReturn:
         # prepare state
         state_id: Final = (
             haio_hash(asked_questions[0]["question_template"])
@@ -1255,6 +1330,8 @@ class HAIOClient:
 
         # prepare
         answer_list: Final[list[Answer | None]] = [None] * (state["task_number"])
+        client_list: Final[list[ClientType | None]] = [None] * (state["task_number"])
+        add_human_assign: int = 0
         task_clusters_dict: Final[dict[str, HAIOClient.TaskCluster]] = copy.deepcopy(
             state["task_clusters_dict"]
         )
@@ -1286,12 +1363,14 @@ class HAIOClient:
                     data_list=state["data_lists"][task_index],
                     client="human",
                 )
+                add_human_assign += 1
                 state["answer_candidate_lists"]["human"][task_index] = human_answer
                 state["data_lists"][task_index] = None
                 state["task_phases"][task_phase_index].add(task_index)
 
             incomplete_task_indexes.remove(task_index)
             answer_list[task_index] = human_answer
+            client_list[task_index] = "human"
 
             # update task clusters
             for task_cluster in task_clusters_dict.values():
@@ -1328,18 +1407,29 @@ class HAIOClient:
                                 answer_list[inner_task_index] = state[
                                     "answer_candidate_lists"
                                 ][task_cluster["client"]][inner_task_index]
+                                client_list[inner_task_index] = task_cluster["client"]
 
             # check if questions have been answered
             if None not in answer_list[-len(asked_questions) :]:
-                return answer_list[-len(asked_questions) :]
+                return {
+                    "answer_list": answer_list[-len(asked_questions) :],
+                    "client_list": client_list[-len(asked_questions) :],
+                    "add_human_assign": add_human_assign,
+                }
 
-        return []  # never reach here
+        return {
+            "answer_list": [],
+            "client_list": [],
+            "add_human_assign": 0,
+        }  # never reach here
+
+    # wait
 
     async def wait(
         self,
         asked_questions: AskedQuestion | list[AskedQuestion],
         execution_config: dict,
-    ) -> Answer | list[Answer]:
+    ) -> Answer | MethodReturn:
         if isinstance(asked_questions, dict):
             # 単一問題に対して回答を取得
             return await self.ask_get_answer(

@@ -1,5 +1,6 @@
 from haio import MTurk_IO, OpenAI_IO, Gemini_IO, HAIOClient, QuestionTemplate
 import asyncio
+import pprint
 from icecream import ic
 
 
@@ -116,12 +117,12 @@ async def main() -> None:
             )
         )
 
-    answer_list = await haio_client.wait(
+    answer_info = await haio_client.wait(
         asked_questions=asked_questions,
         execution_config={"client": "gemini"},
     )
 
-    print(answer_list)
+    pprint.pprint(answer_info)
 
 
 if __name__ == "__main__":

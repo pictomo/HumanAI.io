@@ -7,6 +7,7 @@ from haio import (
     QuestionTemplate,
 )
 import asyncio
+import pprint
 from icecream import ic
 
 
@@ -74,35 +75,35 @@ async def main() -> None:
                 "method": "sequential_cta_1",
                 "quality_requirement": 0.9,
             }
-            execution_config = {
-                "method": "sequential_cta_2",
-                "quality_requirement": 0.9,
-                "sample_size": 2,
-            }
-            execution_config = {
-                "method": "sequential_cta_3",
-                "quality_requirement": 0.9,
-            }
-            execution_config = {
-                "method": "sequential_gta_1",
-                "quality_requirement": 0.9,
-            }
-            execution_config = {
-                "method": "sequential_gta_2",
-                "quality_requirement": 0.9,
-                "sample_size": 2,
-            }
-            execution_config = {
-                "method": "sequential_gta_3",
-                "quality_requirement": 0.9,
-            }
+            # execution_config = {
+            #     "method": "sequential_cta_2",
+            #     "quality_requirement": 0.9,
+            #     "sample_size": 2,
+            # }
+            # execution_config = {
+            #     "method": "sequential_cta_3",
+            #     "quality_requirement": 0.9,
+            # }
+            # execution_config = {
+            #     "method": "sequential_gta_1",
+            #     "quality_requirement": 0.9,
+            # }
+            # execution_config = {
+            #     "method": "sequential_gta_2",
+            #     "quality_requirement": 0.9,
+            #     "sample_size": 2,
+            # }
+            # execution_config = {
+            #     "method": "sequential_gta_3",
+            #     "quality_requirement": 0.9,
+            # }
 
-            answer_list = await haio_client.wait(
+            answer_info = await haio_client.wait(
                 asked_questions=asked_questions,
                 execution_config=execution_config,
             )
 
-            print(answer_list)
+            pprint.pprint(answer_info)
 
             asked_questions = []
             asked_questions_size = 0

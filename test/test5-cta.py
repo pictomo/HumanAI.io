@@ -1,5 +1,13 @@
-from haio import MTurk_IO, OpenAI_IO, Gemini_IO, HAIOClient, QuestionTemplate
+from haio import (
+    MTurk_IO,
+    Bedrock_IO,
+    OpenAI_IO,
+    Gemini_IO,
+    HAIOClient,
+    QuestionTemplate,
+)
 import asyncio
+import pprint
 from icecream import ic
 
 
@@ -7,9 +15,15 @@ async def main() -> None:
     mturk_io = MTurk_IO()
     openai_io = OpenAI_IO()
     gemini_io = Gemini_IO()
+    llama_io = Bedrock_IO("us.meta.llama3-2-90b-instruct-v1:0")
+    claude_io = Bedrock_IO("us.anthropic.claude-3-5-sonnet-20241022-v2:0")
 
     haio_client = HAIOClient(
-        mturk_io=mturk_io, openai_io=openai_io, gemini_io=gemini_io
+        mturk_io=mturk_io,
+        openai_io=openai_io,
+        gemini_io=gemini_io,
+        llama_io=llama_io,
+        claude_io=claude_io,
     )
 
     question_template: QuestionTemplate
@@ -57,12 +71,12 @@ async def main() -> None:
         "quality_requirement": 0.9,
     }
 
-    answer_list = await haio_client.wait(
+    answer_info = await haio_client.wait(
         asked_questions=asked_questions,
         execution_config=execution_config,
     )
 
-    print(answer_list)
+    pprint.pprint(answer_info)
 
 
 if __name__ == "__main__":
