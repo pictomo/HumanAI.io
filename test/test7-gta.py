@@ -19,7 +19,7 @@ async def main() -> None:
     claude_io = Bedrock_IO("us.anthropic.claude-3-5-sonnet-20241022-v2:0")
 
     haio_client = HAIOClient(
-        mturk_io=mturk_io,
+        human_io=mturk_io,
         openai_io=openai_io,
         gemini_io=gemini_io,
         llama_io=llama_io,

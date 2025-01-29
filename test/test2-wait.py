@@ -8,7 +8,7 @@ async def main() -> None:
     gemini_io = Gemini_IO()
 
     haio_client = HAIOClient(
-        mturk_io=mturk_io, openai_io=openai_io, gemini_io=gemini_io
+        human_io=mturk_io, openai_io=openai_io, gemini_io=gemini_io
     )
 
     question_template: QuestionTemplate

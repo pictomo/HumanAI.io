@@ -82,13 +82,13 @@ class HAIOClient:
 
     def __init__(
         self,
-        mturk_io: Worker_IO,
+        human_io: Worker_IO,
         openai_io: OpenAI_IO | None = None,
         gemini_io: Gemini_IO | None = None,
         llama_io: Bedrock_IO | None = None,
         claude_io: Bedrock_IO | None = None,
     ) -> None:
-        self.human_client = mturk_io
+        self.human_client = human_io
 
         self.ai_clients: dict[ClientType, Worker_IO] = {}
         if openai_io is not None:
