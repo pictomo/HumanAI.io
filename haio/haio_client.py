@@ -129,6 +129,9 @@ class HAIOClient:
             dict[str, HAIOClient.MethodState]
         ] = {}
 
+    def del_cache_use_hist(self):
+        self.used_cache = {}
+
     @overload
     def _get_cache_dir_path(self, ensure_exist: Literal[True] = True) -> str: ...
     @overload
