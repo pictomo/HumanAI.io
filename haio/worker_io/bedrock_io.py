@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from icecream import ic
+from time import sleep
 from typing import cast
 import boto3
 import httpx
@@ -163,21 +164,30 @@ class Bedrock_IO(Worker_IO):
         user_content.append({"text": user_message})
 
         # タスクの構成と発行
-        response = self.client.converse(
-            modelId=self.model_id,
-            messages=[
-                {
-                    "role": "user",
-                    "content": user_content,
-                },
-            ],
-            system=[
-                {
-                    "text": system_message,
-                }
-            ],
-            toolConfig=tool_config,
-        )
+        for i in range(10):
+            try:
+                response = self.client.converse(
+                    modelId=self.model_id,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": user_content,
+                        },
+                    ],
+                    system=[
+                        {
+                            "text": system_message,
+                        }
+                    ],
+                    toolConfig=tool_config,
+                )
+                break
+            except Exception as e:
+                if i == 9:
+                    raise e
+                sleep_time = min(100, 2**i)
+                sleep(sleep_time)
+
         print("Bedrock Question Config Hash:", question_config_hash)
 
         response_content = response["output"]["message"]["content"]
