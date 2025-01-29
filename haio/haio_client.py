@@ -132,6 +132,14 @@ class HAIOClient:
     def del_cache_use_hist(self):
         self.used_cache = {}
 
+    def reset_state(self):
+        self._sequential_cta_1_method_state = {}
+        self._sequential_cta_2_method_state = {}
+        self._sequential_cta_3_method_state = {}
+        self._sequential_gta_1_method_state = {}
+        self._sequential_gta_2_method_state = {}
+        self._sequential_gta_3_method_state = {}
+
     @overload
     def _get_cache_dir_path(self, ensure_exist: Literal[True] = True) -> str: ...
     @overload
