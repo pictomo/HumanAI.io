@@ -87,6 +87,7 @@ class HAIOClient:
         gemini_io: Gemini_IO | None = None,
         llama_io: Bedrock_IO | None = None,
         claude_io: Bedrock_IO | None = None,
+        filepath: str | None = None,
     ) -> None:
         self.human_client = human_io
 
@@ -101,6 +102,7 @@ class HAIOClient:
             self.ai_clients["claude"] = claude_io
         # if len(self.ai_clients) == 0:
         #     warnings.warn("No AI client is set.")
+        self.filepath = filepath
 
         self.used_cache: dict[str, dict[str, set[str]]] = {}
 
@@ -132,7 +134,11 @@ class HAIOClient:
         # haio_cacheディレクトリのパスを取得
         executed_script_path = os.path.abspath(sys.argv[0])
         executed_script_dir = os.path.dirname(executed_script_path)
-        cache_dir = os.path.join(executed_script_dir, "haio_cache")
+        cache_dir = (
+            self.filepath
+            if self.filepath is not None
+            else os.path.join(executed_script_dir, "haio_cache")
+        )
 
         if not os.path.exists(cache_dir):  # haio_cacheディレクトリが存在しない場合
             if ensure_exist:  # ensure_existがTrueならディレクトリを作成
