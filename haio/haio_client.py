@@ -38,8 +38,8 @@ def insert_data(
     return question_config
 
 
-client_types = ["human", "openai", "gemini", "llama", "claude"]
-ClientType = Literal["human", "openai", "gemini", "llama", "claude"]
+client_types = ["human", "openai", "gemini", "llama", "claude", "nova"]
+ClientType = Literal["human", "openai", "gemini", "llama", "claude", "nova"]
 
 
 class AnswerCache(TypedDict):
@@ -87,6 +87,7 @@ class HAIOClient:
         gemini_io: Gemini_IO | None = None,
         llama_io: Bedrock_IO | None = None,
         claude_io: Bedrock_IO | None = None,
+        nova_io: Bedrock_IO | None = None,
         filepath: str | None = None,
     ) -> None:
         self.human_client = human_io
@@ -100,6 +101,8 @@ class HAIOClient:
             self.ai_clients["llama"] = llama_io
         if claude_io is not None:
             self.ai_clients["claude"] = claude_io
+        if nova_io is not None:
+            self.ai_clients["nova"] = nova_io
         # if len(self.ai_clients) == 0:
         #     warnings.warn("No AI client is set.")
         self.filepath = filepath

@@ -18,6 +18,7 @@ class Bedrock_IO(Worker_IO):
             "can_force_tool_use": False
         },  # Multiple image inputs are not supported.
         "us.anthropic.claude-3-5-sonnet-20241022-v2:0": {"can_force_tool_use": True},
+        "us.amazon.nova-lite-v1:0": {"can_force_tool_use": False},
     }
 
     def __init__(self, model_id: str) -> None:
@@ -189,20 +190,21 @@ class Bedrock_IO(Worker_IO):
 
         if tool_use_response is not None:
             answer_obj = tool_use_response["toolUse"]["input"]
-            self.asked[question_config_hash] = answer_obj["answer"]
+            answer = answer_obj["answer"]
         elif text_response is not None:
             answer = text_response["text"]
-            if cast(MutableAnswer, question_config["answer"])["type"] == "select":
-                formatted_answer = force_choice(
-                    answer, cast(MutableAnswer, question_config["answer"])["options"]
-                )
-                self.asked[question_config_hash] = formatted_answer
-            elif cast(MutableAnswer, question_config["answer"])["type"] == "number":
-                self.asked[question_config_hash] = str(float(answer))
-            else:
-                self.asked[question_config_hash] = answer
         else:
             raise Exception("The model returned empty response.")
+
+        if cast(MutableAnswer, question_config["answer"])["type"] == "select":
+            formatted_answer = force_choice(
+                answer, cast(MutableAnswer, question_config["answer"])["options"]
+            )
+            self.asked[question_config_hash] = formatted_answer
+        elif cast(MutableAnswer, question_config["answer"])["type"] == "number":
+            self.asked[question_config_hash] = str(float(answer))
+        else:
+            self.asked[question_config_hash] = answer
 
         return question_config_hash
 

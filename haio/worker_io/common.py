@@ -66,6 +66,7 @@ def resize_image(
 
 
 def force_choice(input_str: str, options: list[str]) -> str:
+    input_str = str(input_str)
     # force AI output to be enum value
     if not options:
         raise ValueError("The options list cannot be empty.")
