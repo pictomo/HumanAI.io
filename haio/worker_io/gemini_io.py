@@ -93,12 +93,20 @@ class Gemini_IO(Worker_IO):
         if img_urls:
             user_content = [system_message]
             for img_url in img_urls:
-                image = httpx.get(img_url)
+                if img_url.startswith("data:"):
+                    metadata, img_data_base64 = img_url[5:].split(",", 1)
+                    mime_type = metadata.split(";", 1)[0]
+                else:
+                    image_response = httpx.get(img_url)
+                    mime_type = image_response.headers.get("Content-Type")
+                    img_data_base64 = base64.b64encode(image_response.content).decode(
+                        "utf-8"
+                    )
 
                 user_content.append(
                     {
-                        "mime_type": image.headers.get("Content-Type"),
-                        "data": base64.b64encode(image.content).decode("utf-8"),
+                        "mime_type": mime_type,
+                        "data": img_data_base64,
                     }
                 )
             user_content.append(user_message)
