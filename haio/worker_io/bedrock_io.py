@@ -184,7 +184,7 @@ class Bedrock_IO(Worker_IO):
                 break
             except Exception as e:
                 if i == 9:
-                    raise e
+                    raise
                 sleep_time = min(100, 2**i)
                 sleep(sleep_time)
 
