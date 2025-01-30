@@ -52,7 +52,15 @@ class OpenAI_IO(Worker_IO):
         if imgs:
             user_content = [{"type": "text", "text": user_message}]
             for img in imgs:
-                user_content.append({"type": "image_url", "image_url": {"url": img}})
+                user_content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": img,
+                            "detail": "low",
+                        },
+                    }
+                )
         else:
             user_content = user_message
 
