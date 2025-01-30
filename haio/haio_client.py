@@ -149,7 +149,7 @@ class HAIOClient:
         executed_script_path = os.path.abspath(sys.argv[0])
         executed_script_dir = os.path.dirname(executed_script_path)
         cache_dir = (
-            self.filepath
+            os.path.join(self.filepath, "haio_cache")
             if self.filepath is not None
             else os.path.join(executed_script_dir, "haio_cache")
         )
